@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary_pastel_dark">#121218</color>
+    <color name="surface_pastel_dark">#1A1A24</color>
+    <color name="accent_pink">#FF7597</color>
+    <color name="accent_cyan">#00E5FF</color>
+    <color name="accent_amber">#FFB300</color>
+    <color name="text_primary">#F1F5F9</color>
+</resources>

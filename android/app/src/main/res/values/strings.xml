@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kuma Kuma Radio</string>
+    <string name="channel_name">Transmisión de Radio Kuma Kuma</string>
+    <string name="channel_description">Controles de reproducción de audio y estado de transmisión</string>
+    <string name="action_play">Reproducir</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_stop">Detener</string>
+    <string name="equalizer_title">Ecualizador Gráfico</string>
+</resources>

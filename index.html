@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Kuma Kuma Radio - Kumamoto FM 🌸</title>
+    <meta name="description" content="Reproductor de radio en vivo anime, J-Pop y Kawaii Beats con temas Pastel Night y Sakura Day, ecualizador gráfico y ajustes avanzados." />
+    <meta property="og:title" content="Kuma Kuma Radio - Kumamoto FM 🌸" />
+    <meta property="og:description" content="Reproductor de radio en vivo anime, J-Pop y Kawaii Beats con temas Pastel Night y Sakura Day, ecualizador gráfico y ajustes avanzados." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Quicksand:wght@500;600;700&family=Sora:wght@600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+    <script>
+      // OAuth Popup Callback Handler for Discord, Google, X
+      if (window.location.pathname.startsWith('/auth/callback')) {
+        var hash = window.location.hash.substring(1);
+        var search = window.location.search.substring(1);
+        var params = new URLSearchParams(hash || search);
+        var accessToken = params.get('access_token');
+        var code = params.get('code');
+        var state = params.get('state');
+        var error = params.get('error');
+
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'OAUTH_AUTH_SUCCESS',
+            accessToken: accessToken,
+            code: code,
+            state: state,
+            error: error
+          }, '*');
+          window.close();
+        } else {
+          window.location.href = '/';
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

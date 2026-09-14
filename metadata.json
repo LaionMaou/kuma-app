@@ -1,0 +1,6 @@
+{
+  "name": "Kuma Kuma Radio",
+  "description": "Reproductor de radio en vivo anime, J-Pop y Kawaii Beats con temas Pastel Night y Sakura Day, ecualizador gráfico y ajustes avanzados.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
