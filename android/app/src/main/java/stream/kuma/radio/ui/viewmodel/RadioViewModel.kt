@@ -222,7 +222,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                     remainingSec--
                 }
                 if (isActive) {
-                    _isPlaying.value = false
+                    RadioPlayerService.pause(getApplication())
                     _sleepTimerMinutes.value = null
                 }
             }
