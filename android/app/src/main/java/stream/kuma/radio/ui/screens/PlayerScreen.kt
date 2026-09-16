@@ -175,6 +175,12 @@ fun PlayerScreen(
         }
 
         // 2. DJ Banner Card
+        val djBannerTitle = if (currentDj.isLiveStreamer) {
+            "${currentDj.currentShow} con ${currentDj.name}"
+        } else {
+            "Kuma Show con Kuma DJ"
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -196,14 +202,14 @@ fun PlayerScreen(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = currentDj.currentShow,
+                    text = djBannerTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "con ${currentDj.name} (${currentDj.handle})",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = if (currentDj.isLiveStreamer) "Streamer en vivo" else "Transmisión Oficial",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             }

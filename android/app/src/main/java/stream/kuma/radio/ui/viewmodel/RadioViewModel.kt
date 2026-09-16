@@ -77,11 +77,12 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentDj = MutableStateFlow(
         Dj(
-            name = "DJ Sakura-chan",
-            handle = "@sakura_kuma",
+            name = "Kuma DJ",
+            handle = "@kuma_dj",
             status = "Al Aire",
             avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
-            currentShow = "Neon Otaku Prime Live"
+            currentShow = "Kuma Show",
+            isLiveStreamer = false
         )
     )
     val currentDj: StateFlow<Dj> = _currentDj.asStateFlow()
@@ -332,9 +333,29 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
                     // Update listeners count
                     response.listeners?.let { l ->
-                        if (l.total > 0) {
-                            _currentStation.value = _currentStation.value.copy(listeners = l.total)
-                        }
+                        _currentStation.value = _currentStation.value.copy(listeners = l.total)
+                    }
+
+                    // Update DJ banner: "Kuma Show con Kuma DJ" when no one live, or "{show} con {streamer}" when live
+                    val isLive = response.live?.is_live == true
+                    val streamer = response.live?.streamer_name?.takeIf { it.isNotBlank() }
+                    if (isLive && streamer != null) {
+                        val showName = response.station?.name ?: "Programa en Vivo"
+                        _currentDj.value = _currentDj.value.copy(
+                            name = streamer,
+                            handle = "@$streamer",
+                            status = "Al Aire",
+                            currentShow = showName,
+                            isLiveStreamer = true
+                        )
+                    } else {
+                        _currentDj.value = _currentDj.value.copy(
+                            name = "Kuma DJ",
+                            handle = "@kuma_dj",
+                            status = "Al Aire",
+                            currentShow = "Kuma Show",
+                            isLiveStreamer = false
+                        )
                     }
 
                     // Update current song
@@ -349,6 +370,26 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                                 playedAt = "En Vivo"
                             )
                             _currentTrack.value = updatedTrack
+                        }
+                    }
+
+                    // Update song history with real data from AzuraCast
+                    if (response.song_history.isNotEmpty()) {
+                        val realHistory = response.song_history.mapNotNull { item ->
+                            val s = item.song ?: return@mapNotNull null
+                            Track(
+                                id = "sh_${item.sh_id ?: System.currentTimeMillis()}",
+                                title = s.title ?: "Tema Transmitido",
+                                artist = s.artist ?: "Artista",
+                                album = s.album ?: "",
+                                artUrl = s.art ?: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80",
+                                durationSeconds = 180,
+                                playedAt = "Reciente",
+                                isLiked = false
+                            )
+                        }
+                        if (realHistory.isNotEmpty()) {
+                            _history.value = realHistory
                         }
                     }
                 } catch (e: Exception) {

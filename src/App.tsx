@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ActiveTab, AppSettings, Station, ThemeMode } from './types';
 import { STATIONS, EQ_PRESETS } from './data/mockData';
 import { Header } from './components/Header';
@@ -10,6 +10,7 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { StationSelectorModal, CastModal, InfoModal } from './components/Modals';
 import { AndroidCodeExplorer } from './components/AndroidCodeExplorer';
 import { Smartphone, Code2 } from 'lucide-react';
+import { azuracastService } from './services/azuracastService';
 
 export default function App() {
   const [station, setStation] = useState<Station>(STATIONS[0]);
@@ -19,6 +20,47 @@ export default function App() {
   const [isCastModalOpen, setIsCastModalOpen] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+  // Sincronizar automáticamente con AzuraCast NowPlaying en tiempo real
+  useEffect(() => {
+    azuracastService.startPolling(station.azuracastStationId, 15000);
+
+    const unsubscribe = azuracastService.subscribe((data) => {
+      setStation((prev) => {
+        const isLive = data.live?.is_live === true;
+        const streamer = data.live?.streamer_name;
+        const updatedTrack = data.now_playing?.song?.title
+          ? azuracastService.toTrackModel(data)
+          : prev.currentTrack;
+
+        return {
+          ...prev,
+          currentTrack: {
+            ...updatedTrack,
+            votes: prev.currentTrack.votes,
+            hasLiked: prev.currentTrack.hasLiked,
+          },
+          dj: {
+            ...prev.dj,
+            name: isLive && streamer ? streamer : 'Kuma DJ',
+            title: isLive && streamer ? `🔴 ${data.station?.name || 'Programa'} con ${streamer}` : '🌸 Kuma Show con Kuma DJ',
+            showName: data.station?.name || 'Kuma Show',
+            isLiveStreamer: isLive && Boolean(streamer),
+            listeners: data.listeners?.total ?? prev.dj.listeners,
+          },
+          streamStats: {
+            ...prev.streamStats,
+            tracksToday: data.song_history ? data.song_history.length : prev.streamStats.tracksToday,
+          },
+        };
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      azuracastService.stopPolling();
+    };
+  }, [station.azuracastStationId]);
 
   const [settings, setSettings] = useState<AppSettings>({
     theme: 'dark', // 'dark' = Pastel Night, 'light' = Sakura Day

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Track, ThemeMode } from '../types';
 import { TRACK_HISTORY } from '../data/mockData';
+import { azuracastService } from '../services/azuracastService';
 
 interface HistoryScreenProps {
   theme: ThemeMode;
@@ -12,6 +13,50 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ theme }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('Todos');
   const [tracks, setTracks] = useState<Track[]>(TRACK_HISTORY);
+
+  useEffect(() => {
+    // Escuchar actualizaciones de AzuraCast para historial real
+    const unsubscribe = azuracastService.subscribe((data) => {
+      if (data.song_history && data.song_history.length > 0) {
+        const liveHistory: Track[] = data.song_history.map((item, idx) => ({
+          id: `sh_${item.sh_id || idx}_${item.played_at}`,
+          title: item.song.title || 'Canción emitada',
+          japaneseTitle: item.song.title,
+          subtitle: item.song.album || undefined,
+          artist: item.song.artist || 'Artista',
+          albumArt: item.song.art || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80',
+          genre: 'En Emisión',
+          votes: 10 + idx * 3,
+          hasLiked: false,
+        }));
+        setTracks(liveHistory);
+      }
+    });
+
+    // Intentar consultar inmediatamente
+    azuracastService.fetchNowPlaying().then((data) => {
+      if (data.song_history && data.song_history.length > 0) {
+        const liveHistory: Track[] = data.song_history.map((item, idx) => ({
+          id: `sh_${item.sh_id || idx}_${item.played_at}`,
+          title: item.song.title || 'Canción emitida',
+          japaneseTitle: item.song.title,
+          subtitle: item.song.album || undefined,
+          artist: item.song.artist || 'Artista',
+          albumArt: item.song.art || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80',
+          genre: 'En Emisión',
+          votes: 10 + idx * 3,
+          hasLiked: false,
+        }));
+        setTracks(liveHistory);
+      }
+    }).catch(() => {
+      // Usar historial predeterminado si el servidor está offline o CORS
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const filters = ['Todos', 'Anime OST', 'Future Funk', 'Kawaii Bass', 'Lo-Fi Chill'];
 

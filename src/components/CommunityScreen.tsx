@@ -77,6 +77,27 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({ theme, station
   const [isSongRequest, setIsSongRequest] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
+  // Sincronizar mensajes desde el backend de chat
+  useEffect(() => {
+    const fetchChatMessages = async () => {
+      try {
+        const res = await fetch('/api/chat/messages');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+          }
+        }
+      } catch {
+        // Fallback local
+      }
+    };
+
+    fetchChatMessages();
+    const interval = setInterval(fetchChatMessages, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Estado del monitor de Cabina DJ (solo para DJs)
   const [djReactionsFeed, setDjReactionsFeed] = useState<DjReactionItem[]>([
     { id: 'dj-r-1', sender: 'Yuki_Moe#4092', userType: 'discord', emoji: '🔥', timestamp: 'Hace 4s' },
@@ -170,7 +191,7 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({ theme, station
   };
 
   // Enviar mensaje en el chat
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
@@ -179,25 +200,47 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({ theme, station
       return;
     }
 
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+    const payload = {
       sender: currentUser.username,
       avatar: currentUser.avatar,
       text: inputText.trim(),
+      userType: currentUser.type,
+      isDj: currentUser.isDj || currentUser.type === 'dj',
+      tag: currentUser.handle || (currentUser.type === 'discord' ? 'Discord Bot' : currentUser.type === 'google' ? 'Google SSO' : undefined),
+      isSongRequest: isSongRequest,
+    };
+
+    const newMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      sender: payload.sender,
+      avatar: payload.avatar,
+      text: payload.text,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       likes: 1,
-      isDj: currentUser.isDj || currentUser.type === 'dj',
+      isDj: payload.isDj,
       userType: currentUser.type,
-      tag: currentUser.handle || (currentUser.type === 'discord' ? 'Discord Bot' : currentUser.type === 'google' ? 'Google SSO' : undefined),
+      tag: payload.tag,
       isSongRequest: isSongRequest,
     };
 
     setMessages((prev) => [...prev, newMsg]);
     setInputText('');
+    const requested = isSongRequest;
     setIsSongRequest(false);
 
+    // Enviar al backend
+    try {
+      await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      // Offline fallback
+    }
+
     // Respuesta automática de cortesía del DJ si es petición
-    if (isSongRequest && !isDj) {
+    if (requested && !isDj) {
       setTimeout(() => {
         const djReply: ChatMessage = {
           id: `dj-req-reply-${Date.now()}`,

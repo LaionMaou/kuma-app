@@ -21,12 +21,14 @@ export const STATIONS: Station[] = [
     streamUrl: RADIO_CONFIG.DEFAULT_STREAM_URL,
     azuracastStationId: '1',
     dj: {
-      name: 'DJ Kuma-chan 🐻✨',
-      title: '🌸 LOCUTORA EN VIVO',
+      name: 'Kuma DJ',
+      title: '🌸 Kuma Show con Kuma DJ',
       avatar: DJ_KUMA_AVATAR,
-      bio: 'Directo desde Kumamoto',
+      bio: 'Directo desde Kumamoto 🌸',
       listeners: 1428,
-      greetingText: '✨ ¡Has enviado un abrazo patita a DJ Kuma-chan! 🐾🌸',
+      greetingText: '✨ ¡Has enviado un abrazo patita a Kuma DJ! 🐾🌸',
+      showName: 'Kuma Show',
+      isLiveStreamer: false,
     },
     currentTrack: {
       id: 'trk-1',

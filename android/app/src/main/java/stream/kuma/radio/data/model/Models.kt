@@ -32,7 +32,8 @@ data class Dj(
     val handle: String,
     val status: String = "En Vivo",
     val avatarUrl: String = "",
-    val currentShow: String = "Kuma Night Fever"
+    val currentShow: String = "Kuma Show",
+    val isLiveStreamer: Boolean = false
 )
 
 data class EqualizerBand(
@@ -80,7 +81,15 @@ data class AzuraCastNowPlaying(
     val station: AzuraStationInfo? = null,
     val listeners: AzuraListeners? = null,
     val now_playing: AzuraCurrentPlaying? = null,
+    val live: AzuraLive? = null,
     val song_history: List<AzuraHistoryItem> = emptyList()
+)
+
+@Serializable
+data class AzuraLive(
+    val is_live: Boolean = false,
+    val streamer_name: String? = null,
+    val broadcast_start: Long? = null
 )
 
 @Serializable

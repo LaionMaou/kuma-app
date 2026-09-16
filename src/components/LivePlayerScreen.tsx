@@ -160,7 +160,7 @@ export const LivePlayerScreen: React.FC<LivePlayerScreenProps> = ({
                     isLight ? 'text-[#b0284b]' : 'text-[#ffb1c1]'
                   }`}
                 >
-                  {station.dj.title}
+                  {station.dj.isLiveStreamer ? '🔴 STREAMER EN VIVO' : '🌸 TRANSMISIÓN OFICIAL'}
                 </span>
                 <span className="text-[10px] opacity-50">•</span>
                 <span
@@ -177,7 +177,9 @@ export const LivePlayerScreen: React.FC<LivePlayerScreenProps> = ({
                     isLight ? 'text-[#2e1a38]' : 'text-[#e6defc]'
                   }`}
                 >
-                  {station.dj.name}
+                  {station.dj.isLiveStreamer
+                    ? `${station.dj.showName || 'Programa'} con ${station.dj.name}`
+                    : 'Kuma Show con Kuma DJ'}
                 </h2>
               </div>
               <p

@@ -18,6 +18,8 @@ export interface Station {
     bio: string;
     listeners: number;
     greetingText: string;
+    showName?: string;
+    isLiveStreamer?: boolean;
   };
   currentTrack: Track;
   nextTrack: {
