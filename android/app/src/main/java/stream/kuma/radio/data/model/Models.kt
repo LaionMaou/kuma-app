@@ -64,6 +64,7 @@ data class AuthUser(
     val isDj: Boolean = false
 )
 
+@Serializable
 data class ChatMessage(
     val id: String,
     val username: String,
@@ -72,7 +73,48 @@ data class ChatMessage(
     val badge: String = "Listener",
     val isDj: Boolean = false,
     val provider: AuthProvider = AuthProvider.GUEST,
-    val avatarUrl: String = ""
+    val avatarUrl: String = "",
+    val likes: Int = 1,
+    val isSongRequest: Boolean = false
+)
+
+// DTOs para comunicación con el backend Express de Chat
+@Serializable
+data class BackendChatMessageDto(
+    val id: String? = null,
+    val sender: String? = null,
+    val avatar: String? = null,
+    val text: String? = null,
+    val time: String? = null,
+    val likes: Int? = 1,
+    val isDj: Boolean? = false,
+    val userType: String? = "anonymous",
+    val tag: String? = null,
+    val isSongRequest: Boolean? = false
+)
+
+@Serializable
+data class BackendChatResponse(
+    val success: Boolean = false,
+    val messages: List<BackendChatMessageDto> = emptyList(),
+    val count: Int = 0
+)
+
+@Serializable
+data class BackendSendMessageRequest(
+    val sender: String,
+    val avatar: String,
+    val text: String,
+    val userType: String,
+    val isDj: Boolean,
+    val tag: String? = null,
+    val isSongRequest: Boolean = false
+)
+
+@Serializable
+data class BackendSendMessageResponse(
+    val success: Boolean = false,
+    val message: BackendChatMessageDto? = null
 )
 
 // AzuraCast API Response Models

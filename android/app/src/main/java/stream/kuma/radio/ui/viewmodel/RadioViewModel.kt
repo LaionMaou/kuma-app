@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import stream.kuma.radio.data.AuthSecurityConfig
 import stream.kuma.radio.data.RadioConfig
 import stream.kuma.radio.data.api.ApiClient
+import stream.kuma.radio.data.api.ChatApiClient
 import stream.kuma.radio.data.model.AuthProvider
 import stream.kuma.radio.data.model.AuthUser
+import stream.kuma.radio.data.model.BackendChatMessageDto
+import stream.kuma.radio.data.model.BackendSendMessageRequest
 import stream.kuma.radio.data.model.ChatMessage
 import stream.kuma.radio.data.model.Dj
 import stream.kuma.radio.data.model.EqualizerBand
@@ -124,6 +127,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         startAzuraCastPolling()
+        startChatPolling()
     }
 
     fun togglePlayPause() {
@@ -304,8 +308,17 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             else -> "Oyente"
         }
 
+        val localId = "msg_${System.currentTimeMillis()}"
+        val userTypeStr = when (user?.provider) {
+            AuthProvider.DISCORD -> "discord"
+            AuthProvider.GOOGLE -> "google"
+            AuthProvider.X -> "x"
+            AuthProvider.DJ -> "dj"
+            else -> if (isDjMessage) "dj" else "anonymous"
+        }
+
         val newMsg = ChatMessage(
-            id = "msg_${System.currentTimeMillis()}",
+            id = localId,
             username = name,
             text = text.trim(),
             timestamp = "Ahora",
@@ -315,6 +328,73 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             avatarUrl = user?.avatarUrl ?: ""
         )
         _messages.value = _messages.value + newMsg
+
+        // Sincronizar en segundo plano con el backend REST de Chat
+        viewModelScope.launch {
+            try {
+                val req = BackendSendMessageRequest(
+                    sender = name,
+                    avatar = user?.avatarUrl ?: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+                    text = text.trim(),
+                    userType = userTypeStr,
+                    isDj = isDjMessage,
+                    tag = badge,
+                    isSongRequest = text.startsWith("🎵") || text.contains("peticion", ignoreCase = true)
+                )
+                ChatApiClient.chatApi.sendMessage(req)
+            } catch (e: Exception) {
+                // Si el backend no responde, el mensaje permanece en la interfaz localmente
+            }
+        }
+    }
+
+    private fun startChatPolling() {
+        viewModelScope.launch {
+            while (isActive) {
+                try {
+                    val response = ChatApiClient.chatApi.getMessages()
+                    if (response.success && response.messages.isNotEmpty()) {
+                        val mapped = response.messages.mapNotNull { dto ->
+                            dto.text?.let { msgText ->
+                                val isDj = dto.isDj == true || dto.userType == "dj"
+                                val prov = when (dto.userType) {
+                                    "discord" -> AuthProvider.DISCORD
+                                    "google" -> AuthProvider.GOOGLE
+                                    "x" -> AuthProvider.X
+                                    "dj" -> AuthProvider.DJ
+                                    else -> AuthProvider.GUEST
+                                }
+                                val badge = dto.tag ?: when {
+                                    isDj -> "👑 DJ EN VIVO"
+                                    prov == AuthProvider.DISCORD -> "🤖 Discord"
+                                    prov == AuthProvider.GOOGLE -> "🌐 Google"
+                                    prov == AuthProvider.X -> "𝕏 Twitter"
+                                    else -> "Oyente"
+                                }
+                                ChatMessage(
+                                    id = dto.id ?: "msg_${dto.hashCode()}",
+                                    username = dto.sender ?: "Oyente",
+                                    text = msgText,
+                                    timestamp = dto.time ?: "Ahora",
+                                    badge = badge,
+                                    isDj = isDj,
+                                    provider = prov,
+                                    avatarUrl = dto.avatar ?: "",
+                                    likes = dto.likes ?: 1,
+                                    isSongRequest = dto.isSongRequest == true
+                                )
+                            }
+                        }
+                        if (mapped.isNotEmpty()) {
+                            _messages.value = mapped
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignora errores temporales de conexión o servidor
+                }
+                delay(4000) // Sincronización cada 4 segundos
+            }
+        }
     }
 
     private fun startAzuraCastPolling() {

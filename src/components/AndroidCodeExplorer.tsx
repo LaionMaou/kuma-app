@@ -52,6 +52,36 @@ object RadioConfig {
      * Se envía automáticamente en cabecera "X-API-Key"
      */
     const val AZURACAST_API_KEY = ""
+
+    /**
+     * 5. BACKEND DEL CHAT DE LA COMUNIDAD (REST API)
+     */
+    const val CHAT_BACKEND_URL = "https://ais-dev-q73lw7ueqvnxqiqjlxovsd-62987734044.us-east1.run.app/"
+}`
+  },
+  {
+    name: 'CommunityChatApi.kt',
+    path: 'app/src/main/java/stream/kuma/radio/data/api/CommunityChatApi.kt',
+    category: 'kotlin',
+    description: 'Cliente Retrofit con OkHttp para consultar y publicar mensajes en el backend de chat de la comunidad',
+    code: `package stream.kuma.radio.data.api
+
+import stream.kuma.radio.data.RadioConfig
+import stream.kuma.radio.data.model.BackendChatResponse
+import stream.kuma.radio.data.model.BackendSendMessageRequest
+import stream.kuma.radio.data.model.BackendSendMessageResponse
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.POST
+
+interface CommunityChatApi {
+    @GET("api/chat/messages")
+    suspend fun getMessages(): BackendChatResponse
+
+    @POST("api/chat/messages")
+    suspend fun sendMessage(
+        @Body request: BackendSendMessageRequest
+    ): BackendSendMessageResponse
 }`
   },
   {

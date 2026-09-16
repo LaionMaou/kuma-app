@@ -35,4 +35,11 @@ object RadioConfig {
      * Dejar vacío ("") si el acceso público a /api/nowplaying está habilitado.
      */
     const val AZURACAST_API_KEY = ""
+
+    /**
+     * 💬 5. BACKEND DEL CHAT DE LA COMUNIDAD
+     * URL del servidor Express / backend que procesa y distribuye los mensajes del chat y la cabina.
+     * En desarrollo local con emulador Android se usa http://10.0.2.2:3000/ o la URL del servidor en producción.
+     */
+    const val CHAT_BACKEND_URL = "https://ais-dev-q73lw7ueqvnxqiqjlxovsd-62987734044.us-east1.run.app/"
 }
