@@ -65,6 +65,14 @@ export const RADIO_CONFIG = {
   METADATA_POLL_INTERVAL_MS: 15000,
 
   /**
+   * 💬 5. BACKEND DEL CHAT DE LA COMUNIDAD (OPCIONAL)
+   * Si tienes el backend del chat desplegado en Vercel u otro servidor,
+   * coloca la URL base aquí o mediante la variable de entorno VITE_CHAT_BACKEND_URL.
+   * Si se deja vacío (''), usará el backend interno del servidor actual.
+   */
+  CHAT_BACKEND_URL: (import.meta as any).env?.VITE_CHAT_BACKEND_URL || '',
+
+  /**
    * 📻 LISTADO DE EMISORAS CONFIGURADAS
    * Puedes agregar más estaciones o modificar las existentes aquí:
    */

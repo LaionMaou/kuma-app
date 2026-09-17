@@ -23,6 +23,12 @@ import {
   AtSign,
   AlertCircle
 } from 'lucide-react';
+import { RADIO_CONFIG } from '../config/radioConfig';
+
+const getChatEndpoint = (endpoint: string) => {
+  const base = (RADIO_CONFIG.CHAT_BACKEND_URL || '').replace(/\/+$/, '');
+  return base ? `${base}${endpoint}` : endpoint;
+};
 
 interface CommunityScreenProps {
   theme: ThemeMode;
@@ -81,7 +87,7 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({ theme, station
   useEffect(() => {
     const fetchChatMessages = async () => {
       try {
-        const res = await fetch('/api/chat/messages');
+        const res = await fetch(getChatEndpoint('/api/chat/messages'));
         if (res.ok) {
           const data = await res.json();
           if (data.messages && Array.isArray(data.messages)) {
@@ -230,7 +236,7 @@ export const CommunityScreen: React.FC<CommunityScreenProps> = ({ theme, station
 
     // Enviar al backend
     try {
-      await fetch('/api/chat/messages', {
+      await fetch(getChatEndpoint('/api/chat/messages'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
