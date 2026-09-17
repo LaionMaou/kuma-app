@@ -58,6 +58,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     // Real ExoPlayer Live Playback State from RadioPlayerService
     val isPlaying: StateFlow<Boolean> = RadioPlayerService.isPlayingFlow
     val isBuffering: StateFlow<Boolean> = RadioPlayerService.isBufferingFlow
+    val isMuted: StateFlow<Boolean> = RadioPlayerService.isMutedFlow
     val playbackError: StateFlow<String?> = RadioPlayerService.errorFlow
 
     private val _volume = MutableStateFlow(0.85f)
@@ -73,7 +74,7 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
             artUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80",
             durationSeconds = 213,
             playedAt = "En Vivo",
-            isLiked = true
+            isLiked = false
         )
     )
     val currentTrack: StateFlow<Track> = _currentTrack.asStateFlow()
@@ -205,6 +206,10 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleLikeCurrentTrack() {
         val current = _currentTrack.value
         _currentTrack.value = current.copy(isLiked = !current.isLiked)
+    }
+
+    fun toggleMute() {
+        RadioPlayerService.toggleMute()
     }
 
     fun setVolume(vol: Float) {
@@ -438,32 +443,56 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Update current song
+                    // Update current song from now_playing.song
                     response.now_playing?.song?.let { azuraSong ->
-                        if (!azuraSong.title.isNullOrBlank()) {
-                            val updatedTrack = Track(
-                                id = azuraSong.id ?: "live",
-                                title = azuraSong.title,
-                                artist = azuraSong.artist ?: "Desconocido",
-                                album = azuraSong.album ?: "",
-                                artUrl = azuraSong.art ?: _currentTrack.value.artUrl,
-                                playedAt = "En Vivo"
-                            )
-                            _currentTrack.value = updatedTrack
+                        val songTitle = azuraSong.title?.takeIf { it.isNotBlank() }
+                            ?: azuraSong.text?.takeIf { it.isNotBlank() }
+                            ?: "En Vivo"
+
+                        val songArtist = azuraSong.artist?.takeIf { it.isNotBlank() }
+                            ?: "Kuma Radio"
+
+                        // Extract and resolve now_playing.song.art
+                        val rawArt = azuraSong.art?.trim()?.takeIf { it.isNotBlank() }
+                        val resolvedArt = when {
+                            rawArt == null -> _currentTrack.value.artUrl
+                            rawArt.startsWith("http://") || rawArt.startsWith("https://") -> rawArt
+                            else -> RadioConfig.AZURACAST_BASE_URL.trimEnd('/') + "/" + rawArt.trimStart('/')
                         }
+
+                        val duration = response.now_playing.duration.takeIf { it > 0 } ?: 270L
+
+                        val updatedTrack = Track(
+                            id = azuraSong.id ?: "live",
+                            title = songTitle,
+                            artist = songArtist,
+                            album = azuraSong.album ?: "",
+                            artUrl = resolvedArt,
+                            durationSeconds = duration,
+                            playedAt = "En Vivo",
+                            isLiked = _currentTrack.value.let { prev ->
+                                if (prev.title == songTitle && prev.artist == songArtist) prev.isLiked else false
+                            }
+                        )
+                        _currentTrack.value = updatedTrack
                     }
 
                     // Update song history with real data from AzuraCast
                     if (response.song_history.isNotEmpty()) {
                         val realHistory = response.song_history.mapNotNull { item ->
                             val s = item.song ?: return@mapNotNull null
+                            val historyArt = s.art?.trim()?.takeIf { it.isNotBlank() }?.let { raw ->
+                                if (raw.startsWith("http://") || raw.startsWith("https://")) raw
+                                else RadioConfig.AZURACAST_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
+                            } ?: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80"
+
                             Track(
                                 id = "sh_${item.sh_id ?: System.currentTimeMillis()}",
-                                title = s.title ?: "Tema Transmitido",
+                                title = s.title ?: s.text ?: "Tema Transmitido",
                                 artist = s.artist ?: "Artista",
                                 album = s.album ?: "",
-                                artUrl = s.art ?: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80",
-                                durationSeconds = 180,
+                                artUrl = historyArt,
+                                durationSeconds = item.duration.takeIf { it > 0 } ?: 180,
                                 playedAt = "Reciente",
                                 isLiked = false
                             )

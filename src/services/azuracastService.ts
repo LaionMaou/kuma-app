@@ -145,13 +145,19 @@ class AzuraCastService {
    */
   public toTrackModel(azuraData: AzuraCastNowPlayingResponse): Track {
     const song = azuraData.now_playing.song;
+    let artUrl = song.art;
+    if (artUrl && !artUrl.startsWith('http://') && !artUrl.startsWith('https://')) {
+      const base = RADIO_CONFIG.AZURACAST_BASE_URL.replace(/\/+$/, '');
+      artUrl = `${base}/${artUrl.replace(/^\/+/, '')}`;
+    }
+
     return {
       id: song.id || `azura-${Date.now()}`,
-      title: song.title || 'Música en Vivo',
-      japaneseTitle: song.title,
+      title: song.title || (song as any).text || 'Música en Vivo',
+      japaneseTitle: song.title || (song as any).text,
       artist: song.artist || 'Emisión en Directo',
       subtitle: song.album || undefined,
-      albumArt: song.art || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=80',
+      albumArt: artUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=80',
       genre: song.genre || 'Radio Live',
       votes: 120,
       hasLiked: false,

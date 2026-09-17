@@ -131,25 +131,36 @@ data class AzuraCastNowPlaying(
 data class AzuraLive(
     val is_live: Boolean = false,
     val streamer_name: String? = null,
-    val broadcast_start: Long? = null
+    val broadcast_start: Long? = null,
+    val art: String? = null
 )
 
 @Serializable
 data class AzuraStationInfo(
     val id: Int? = null,
     val name: String? = null,
+    val shortcode: String? = null,
     val description: String? = null,
-    val listen_url: String? = null
+    val listen_url: String? = null,
+    val public_player_url: String? = null,
+    val is_public: Boolean? = null
 )
 
 @Serializable
 data class AzuraListeners(
     val total: Int = 0,
-    val unique: Int = 0
+    val unique: Int = 0,
+    val current: Int = 0
 )
 
 @Serializable
 data class AzuraCurrentPlaying(
+    val sh_id: Long? = null,
+    val played_at: Long? = null,
+    val duration: Long = 0,
+    val playlist: String? = null,
+    val streamer: String? = null,
+    val is_request: Boolean = false,
     val elapsed: Long = 0,
     val remaining: Long = 0,
     val song: AzuraSong? = null
@@ -158,9 +169,13 @@ data class AzuraCurrentPlaying(
 @Serializable
 data class AzuraSong(
     val id: String? = null,
-    val title: String? = null,
+    val text: String? = null,
     val artist: String? = null,
+    val title: String? = null,
     val album: String? = null,
+    val genre: String? = null,
+    val isrc: String? = null,
+    val lyrics: String? = null,
     val art: String? = null
 )
 
@@ -168,5 +183,6 @@ data class AzuraSong(
 data class AzuraHistoryItem(
     val sh_id: Long? = null,
     val played_at: Long? = null,
+    val duration: Long = 0,
     val song: AzuraSong? = null
 )

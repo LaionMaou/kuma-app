@@ -50,6 +50,9 @@ class RadioPlayerService : MediaSessionService() {
         private val _isBufferingFlow = MutableStateFlow(false)
         val isBufferingFlow = _isBufferingFlow.asStateFlow()
 
+        private val _isMutedFlow = MutableStateFlow(false)
+        val isMutedFlow = _isMutedFlow.asStateFlow()
+
         private val _errorFlow = MutableStateFlow<String?>(null)
         val errorFlow = _errorFlow.asStateFlow()
 
@@ -85,6 +88,15 @@ class RadioPlayerService : MediaSessionService() {
                 action = ACTION_STOP
             }
             context.startService(intent)
+        }
+
+        fun toggleMute() {
+            val currentlyMuted = _isMutedFlow.value
+            val newMuted = !currentlyMuted
+            _isMutedFlow.value = newMuted
+            player?.let { exo ->
+                exo.volume = if (newMuted) 0f else 1f
+            }
         }
     }
 
@@ -235,6 +247,7 @@ class RadioPlayerService : MediaSessionService() {
 
             exo.setMediaItem(mediaItem)
             exo.prepare()
+            exo.volume = if (_isMutedFlow.value) 0f else 1f
             exo.playWhenReady = true
         }
     }

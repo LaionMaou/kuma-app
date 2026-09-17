@@ -29,17 +29,16 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -74,8 +73,7 @@ fun PlayerScreen(
     val playbackError by viewModel.playbackError.collectAsState()
     val currentTrack by viewModel.currentTrack.collectAsState()
     val currentDj by viewModel.currentDj.collectAsState()
-    val volume by viewModel.volume.collectAsState()
-    val sleepTimer by viewModel.sleepTimerMinutes.collectAsState()
+    val isMuted by viewModel.isMuted.collectAsState()
 
     // Vinyl Album Art Rotation Animation
     val infiniteTransition = rememberInfiniteTransition(label = "vinyl_spin")
@@ -252,15 +250,32 @@ fun PlayerScreen(
             )
 
             // Inner Album Art Center
-            AsyncImage(
-                model = currentTrack.artUrl,
-                contentDescription = currentTrack.title,
+            Box(
                 modifier = Modifier
                     .size(130.dp)
                     .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
                     .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                contentScale = ContentScale.Crop
-            )
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Radio,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    modifier = Modifier.size(54.dp)
+                )
+
+                if (currentTrack.artUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = currentTrack.artUrl,
+                        contentDescription = currentTrack.title,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
 
             // Center spindle hole
             Box(
@@ -316,96 +331,67 @@ fun PlayerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // 5. Live Audio Stream Telemetry Card
+        // 5. Main Control Bar: Mute (Headphones/Muted), Play/Pause FAB, Cast
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text("Bitrate", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Text(currentStation.bitrate, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            }
-            Column {
-                Text("Oyentes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Text("${currentStation.listeners}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-            }
-            Column {
-                Text("Formato", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Text("AAC-LC / 44.1k", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            }
-            Column {
-                Text("Temporizador", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                Text(if (sleepTimer != null) "${sleepTimer}m" else "Apagado", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 6. Volume Control Slider & Fast Actions
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.VolumeUp,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Slider(
-                value = volume,
-                onValueChange = { viewModel.setVolume(it) },
-                modifier = Modifier.weight(1f),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            // Mute / Unmute Button (Headphones icon / crossed line when muted)
+            IconButton(
+                onClick = { viewModel.toggleMute() },
+                modifier = Modifier.size(52.dp)
+            ) {
+                Icon(
+                    imageVector = if (isMuted) Icons.Default.HeadsetOff else Icons.Default.Headset,
+                    contentDescription = if (isMuted) "Activar Sonido" else "Silenciar Sonido",
+                    tint = if (isMuted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(30.dp)
                 )
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(onClick = { /* Cast dialog */ }) {
+            }
+
+            // Giant Play / Pause / Buffer FAB
+            Box(
+                modifier = Modifier.size(80.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isBuffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(76.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp
+                    )
+                }
+
+                FloatingActionButton(
+                    onClick = { viewModel.togglePlayPause() },
+                    modifier = Modifier.size(68.dp),
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            // Cast Button
+            IconButton(
+                onClick = { /* Cast dialog */ },
+                modifier = Modifier.size(52.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Cast,
                     contentDescription = "Transmitir a Chromecast",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 7. Giant Play / Pause / Buffer FAB
-        Box(
-            modifier = Modifier.size(80.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isBuffering) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(76.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    strokeWidth = 3.dp
-                )
-            }
-
-            FloatingActionButton(
-                onClick = { viewModel.togglePlayPause() },
-                modifier = Modifier.size(68.dp),
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                    modifier = Modifier.size(36.dp)
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
