@@ -34,15 +34,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setConnectionResult(null);
     try {
       const data = await azuracastService.fetchNowPlaying();
+      const songTitle = data.now_playing?.song?.title?.trim() || data.now_playing?.song?.text?.trim() || 'En Reproducción';
+      const songArtist = data.now_playing?.song?.artist?.trim() || 'Kuma Radio';
+      const stationName = data.station?.name || 'Estación AzuraCast';
+      const listenersCount = data.listeners?.current ?? data.listeners?.total ?? 0;
+      const historyCount = data.song_history?.length || 0;
+
       setConnectionResult({
         success: true,
-        message: `¡Conexión Exitosa! Estación: ${data.station.name} | Canción: ${data.now_playing.song.title} - ${data.now_playing.song.artist} (${data.listeners.current} oyentes)`,
+        message: `¡Conexión Exitosa! Estación: ${stationName} | En Vivo: "${songTitle}" por ${songArtist} (${listenersCount} oyentes) | Historial activo: ${historyCount} temas`,
       });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       setConnectionResult({
         success: false,
-        message: `No se pudo conectar a ${azuracastService.getEndpointUrl()}: ${errorMsg}. Verifica tu URL o CORS en el servidor AzuraCast.`,
+        message: `No se pudo conectar a ${azuracastService.getEndpointUrl()}: ${errorMsg}. Verifica tu URL o permisos de la estación.`,
       });
     } finally {
       setIsTestingConnection(false);

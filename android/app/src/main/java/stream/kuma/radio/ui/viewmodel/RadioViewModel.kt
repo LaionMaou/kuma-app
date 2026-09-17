@@ -19,6 +19,16 @@ import stream.kuma.radio.data.model.Station
 import stream.kuma.radio.data.model.Track
 import stream.kuma.radio.service.AudioEffectsManager
 import stream.kuma.radio.service.RadioPlayerService
+import stream.kuma.radio.data.model.AzuraCastNowPlaying
+import stream.kuma.radio.data.model.AzuraHistoryItem
+import stream.kuma.radio.data.model.AzuraSong
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -402,109 +412,184 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun parseAzuraSong(azuraSong: AzuraSong?): Pair<String, String> {
+        if (azuraSong == null) return "Música en Vivo" to "Kuma Radio"
+        var title = azuraSong.title?.trim().orEmpty()
+        var artist = azuraSong.artist?.trim().orEmpty()
+        val text = azuraSong.text?.trim().orEmpty()
+
+        // Si title o artist están vacíos pero text contiene "Artista - Canción"
+        if ((title.isEmpty() || artist.isEmpty()) && text.isNotEmpty()) {
+            if (text.contains(" - ")) {
+                val parts = text.split(" - ", limit = 2)
+                if (artist.isEmpty()) artist = parts[0].trim()
+                if (title.isEmpty() && parts.size > 1) title = parts[1].trim()
+            } else {
+                if (title.isEmpty()) title = text
+                if (artist.isEmpty()) artist = "Kuma Radio"
+            }
+        }
+
+        if (title.isEmpty()) title = if (text.isNotEmpty()) text else "Música en Vivo"
+        if (artist.isEmpty()) artist = "Kuma Radio"
+
+        return title to artist
+    }
+
+    private fun resolveAzuraArtUrl(art: String?): String {
+        val clean = art?.trim().orEmpty()
+        return when {
+            clean.isEmpty() -> "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&auto=format&fit=crop&q=80"
+            clean.startsWith("http://") || clean.startsWith("https://") -> clean
+            else -> RadioConfig.AZURACAST_BASE_URL.trimEnd('/') + "/" + clean.trimStart('/')
+        }
+    }
+
     private fun startAzuraCastPolling() {
         viewModelScope.launch {
             while (isActive) {
                 try {
-                    // Polls the live stream metadata
-                    val response = ApiClient.azuraCastApi.getNowPlaying(_currentStation.value.id)
+                    val stationId = _currentStation.value.id.ifBlank { RadioConfig.AZURACAST_DEFAULT_STATION_ID }
 
-                    // Update live listen URL if provided by AzuraCast mountpoint
-                    response.station?.listen_url?.let { azuraListenUrl ->
-                        if (azuraListenUrl.isNotBlank() && azuraListenUrl != _currentStation.value.streamUrl) {
-                            _currentStation.value = _currentStation.value.copy(streamUrl = azuraListenUrl)
+                    // 1. Obtener NowPlaying (intenta por estación o fallback a todas las estaciones)
+                    val rawElement: JsonElement = try {
+                        ApiClient.azuraCastApi.getNowPlaying(stationId)
+                    } catch (e: Exception) {
+                        try {
+                            ApiClient.azuraCastApi.getNowPlayingAll()
+                        } catch (allEx: Exception) {
+                            throw e
                         }
                     }
 
-                    // Update listeners count
-                    response.listeners?.let { l ->
-                        _currentStation.value = _currentStation.value.copy(listeners = l.total)
-                    }
-
-                    // Update DJ banner: "Kuma Show con Kuma DJ" when no one live, or "{show} con {streamer}" when live
-                    val isLive = response.live?.is_live == true
-                    val streamer = response.live?.streamer_name?.takeIf { it.isNotBlank() }
-                    if (isLive && streamer != null) {
-                        val showName = response.station?.name ?: "Programa en Vivo"
-                        _currentDj.value = _currentDj.value.copy(
-                            name = streamer,
-                            handle = "@$streamer",
-                            status = "Al Aire",
-                            currentShow = showName,
-                            isLiveStreamer = true
-                        )
-                    } else {
-                        _currentDj.value = _currentDj.value.copy(
-                            name = "Kuma DJ",
-                            handle = "@kuma_dj",
-                            status = "Al Aire",
-                            currentShow = "Kuma Show",
-                            isLiveStreamer = false
-                        )
-                    }
-
-                    // Update current song from now_playing.song
-                    response.now_playing?.song?.let { azuraSong ->
-                        val songTitle = azuraSong.title?.takeIf { it.isNotBlank() }
-                            ?: azuraSong.text?.takeIf { it.isNotBlank() }
-                            ?: "En Vivo"
-
-                        val songArtist = azuraSong.artist?.takeIf { it.isNotBlank() }
-                            ?: "Kuma Radio"
-
-                        // Extract and resolve now_playing.song.art
-                        val rawArt = azuraSong.art?.trim()?.takeIf { it.isNotBlank() }
-                        val resolvedArt = when {
-                            rawArt == null -> _currentTrack.value.artUrl
-                            rawArt.startsWith("http://") || rawArt.startsWith("https://") -> rawArt
-                            else -> RadioConfig.AZURACAST_BASE_URL.trimEnd('/') + "/" + rawArt.trimStart('/')
+                    val nowPlayingData: AzuraCastNowPlaying? = when (rawElement) {
+                        is JsonObject -> {
+                            ApiClient.json.decodeFromJsonElement<AzuraCastNowPlaying>(rawElement)
                         }
+                        is JsonArray -> {
+                            // Si AzuraCast devolvió una lista con todas las estaciones, buscar la coincidente o la primera
+                            val matchingObj = rawElement.filterIsInstance<JsonObject>().firstOrNull { obj ->
+                                val st = obj["station"]?.jsonObject
+                                val id = st?.get("id")?.jsonPrimitive?.contentOrNull
+                                val shortcode = st?.get("shortcode")?.jsonPrimitive?.contentOrNull
+                                id.equals(stationId, ignoreCase = true) || shortcode.equals(stationId, ignoreCase = true)
+                            } ?: rawElement.filterIsInstance<JsonObject>().firstOrNull()
 
-                        val duration = response.now_playing.duration.takeIf { it > 0 } ?: 270L
+                            matchingObj?.let { ApiClient.json.decodeFromJsonElement<AzuraCastNowPlaying>(it) }
+                        }
+                        else -> null
+                    }
 
-                        val updatedTrack = Track(
-                            id = azuraSong.id ?: "live",
-                            title = songTitle,
-                            artist = songArtist,
-                            album = azuraSong.album ?: "",
-                            artUrl = resolvedArt,
-                            durationSeconds = duration,
-                            playedAt = "En Vivo",
-                            isLiked = _currentTrack.value.let { prev ->
-                                if (prev.title == songTitle && prev.artist == songArtist) prev.isLiked else false
+                    if (nowPlayingData != null) {
+                        // Actualiza enlace de escucha en vivo si el mountpoint lo provee
+                        nowPlayingData.station?.listen_url?.let { azuraListenUrl ->
+                            if (azuraListenUrl.isNotBlank() && azuraListenUrl != _currentStation.value.streamUrl) {
+                                _currentStation.value = _currentStation.value.copy(streamUrl = azuraListenUrl)
                             }
-                        )
-                        _currentTrack.value = updatedTrack
-                    }
+                        }
 
-                    // Update song history with real data from AzuraCast
-                    if (response.song_history.isNotEmpty()) {
-                        val realHistory = response.song_history.mapNotNull { item ->
-                            val s = item.song ?: return@mapNotNull null
-                            val historyArt = s.art?.trim()?.takeIf { it.isNotBlank() }?.let { raw ->
-                                if (raw.startsWith("http://") || raw.startsWith("https://")) raw
-                                else RadioConfig.AZURACAST_BASE_URL.trimEnd('/') + "/" + raw.trimStart('/')
-                            } ?: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80"
+                        // Actualiza conteo de oyentes
+                        nowPlayingData.listeners?.let { l ->
+                            val totalListeners = if (l.total > 0) l.total else l.current
+                            if (totalListeners > 0) {
+                                _currentStation.value = _currentStation.value.copy(listeners = totalListeners)
+                            }
+                        }
 
-                            Track(
-                                id = "sh_${item.sh_id ?: System.currentTimeMillis()}",
-                                title = s.title ?: s.text ?: "Tema Transmitido",
-                                artist = s.artist ?: "Artista",
-                                album = s.album ?: "",
-                                artUrl = historyArt,
-                                durationSeconds = item.duration.takeIf { it > 0 } ?: 180,
-                                playedAt = "Reciente",
-                                isLiked = false
+                        // Actualiza banner de DJ
+                        val isLive = nowPlayingData.live?.is_live == true
+                        val streamer = nowPlayingData.live?.streamer_name?.takeIf { it.isNotBlank() }
+                        if (isLive && streamer != null) {
+                            val showName = nowPlayingData.station?.name ?: "Programa en Vivo"
+                            _currentDj.value = _currentDj.value.copy(
+                                name = streamer,
+                                handle = "@$streamer",
+                                status = "Al Aire",
+                                currentShow = showName,
+                                isLiveStreamer = true
+                            )
+                        } else {
+                            _currentDj.value = _currentDj.value.copy(
+                                name = "Kuma DJ",
+                                handle = "@kuma_dj",
+                                status = "Al Aire",
+                                currentShow = "Kuma Show",
+                                isLiveStreamer = false
                             )
                         }
-                        if (realHistory.isNotEmpty()) {
-                            _history.value = realHistory
+
+                        // Actualiza canción en reproducción desde now_playing.song (evaluando título y texto)
+                        nowPlayingData.now_playing?.song?.let { azuraSong ->
+                            val (songTitle, songArtist) = parseAzuraSong(azuraSong)
+                            val resolvedArt = resolveAzuraArtUrl(azuraSong.art)
+                            val duration = nowPlayingData.now_playing.duration.toLong().takeIf { it > 0 } ?: 210L
+
+                            val updatedTrack = Track(
+                                id = azuraSong.id ?: "live_${System.currentTimeMillis()}",
+                                title = songTitle,
+                                artist = songArtist,
+                                album = azuraSong.album.orEmpty(),
+                                artUrl = resolvedArt,
+                                durationSeconds = duration,
+                                playedAt = "En Vivo",
+                                isLiked = _currentTrack.value.let { prev ->
+                                    if (prev.title == songTitle && prev.artist == songArtist) prev.isLiked else false
+                                }
+                            )
+                            _currentTrack.value = updatedTrack
+                        }
+
+                        // Actualiza historial de canciones
+                        var historyItems = nowPlayingData.song_history
+
+                        // Si song_history vino vacío en el objeto nowplaying, intentar /api/station/{id}/history
+                        if (historyItems.isEmpty()) {
+                            try {
+                                val historyElement = ApiClient.azuraCastApi.getStationHistory(stationId)
+                                if (historyElement is JsonArray) {
+                                    historyItems = historyElement.mapNotNull { itemJson ->
+                                        try {
+                                            ApiClient.json.decodeFromJsonElement<AzuraHistoryItem>(itemJson)
+                                        } catch (_: Exception) {
+                                            null
+                                        }
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+
+                        if (historyItems.isNotEmpty()) {
+                            val realHistory = historyItems.mapNotNull { item ->
+                                val s = item.song ?: return@mapNotNull null
+                                val (hTitle, hArtist) = parseAzuraSong(s)
+                                val historyArt = resolveAzuraArtUrl(s.art)
+
+                                val playedTimeStr = item.played_at?.let { ts ->
+                                    val date = java.util.Date(ts * 1000)
+                                    val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                    "Emitido a las ${sdf.format(date)}"
+                                } ?: "Reciente"
+
+                                Track(
+                                    id = "sh_${item.sh_id ?: System.currentTimeMillis()}",
+                                    title = hTitle,
+                                    artist = hArtist,
+                                    album = s.album.orEmpty(),
+                                    artUrl = historyArt,
+                                    durationSeconds = item.duration.toLong().takeIf { it > 0 } ?: 180L,
+                                    playedAt = playedTimeStr,
+                                    isLiked = false
+                                )
+                            }
+                            if (realHistory.isNotEmpty()) {
+                                _history.value = realHistory
+                            }
                         }
                     }
                 } catch (e: Exception) {
-                    // Safe offline fallback: Keep the curated track rotation
+                    // Safe offline fallback: Mantiene rotación anterior sin interrumpir audio
                 }
-                delay(15000) // 15 seconds polling interval
+                delay(15000) // Sincronización cada 15 segundos
             }
         }
     }

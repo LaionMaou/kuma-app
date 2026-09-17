@@ -118,6 +118,114 @@ async function startServer() {
     res.json({ status: 'ok', uptime: process.uptime() });
   });
 
+  // === AZURACAST LIVE PROXY (CORS & MIXED-CONTENT BYPASS) ===
+  const defaultAzuraBase = process.env.AZURACAST_BASE_URL || 'https://radio.kumakuma.fm';
+  const defaultAzuraApiKey = process.env.AZURACAST_API_KEY || '';
+
+  const fetchAzuraData = async (targetUrl: string, apiKey: string) => {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'KumaKumaRadio-ServerProxy/1.0',
+    };
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+    const resp = await fetch(targetUrl, { headers });
+    if (!resp.ok) {
+      throw new Error(`AzuraCast responded with status ${resp.status}: ${resp.statusText}`);
+    }
+    return await resp.json();
+  };
+
+  app.get(['/api/azuracast/nowplaying', '/api/azuracast/nowplaying/:station_id'], async (req: Request, res: Response) => {
+    try {
+      const rawStationId = req.params.station_id || req.query.station_id as string || '';
+      const customBase = (req.query.base_url as string || defaultAzuraBase).trim().replace(/\/+$/, '');
+      const apiKey = (req.query.api_key as string || defaultAzuraApiKey).trim();
+
+      // Clean base url in case user configured full endpoint
+      let cleanBase = customBase;
+      let detectedStationId = rawStationId;
+      if (cleanBase.includes('/api/nowplaying')) {
+        const parts = cleanBase.split('/api/nowplaying');
+        cleanBase = parts[0];
+        if (!detectedStationId && parts[1]) {
+          detectedStationId = parts[1].replace(/^\/+/, '');
+        }
+      }
+
+      const stationId = detectedStationId || '1';
+
+      // 1. Intentar llamar a /api/nowplaying/{station_id}
+      let rawData: any = null;
+      try {
+        const targetUrl = `${cleanBase}/api/nowplaying/${encodeURIComponent(stationId)}`;
+        rawData = await fetchAzuraData(targetUrl, apiKey);
+      } catch (err) {
+        // Fallback a /api/nowplaying (lista de todas las estaciones en AzuraCast)
+        try {
+          const allUrl = `${cleanBase}/api/nowplaying`;
+          rawData = await fetchAzuraData(allUrl, apiKey);
+        } catch {
+          throw err;
+        }
+      }
+
+      // Si AzuraCast devolvió un Array de estaciones, buscar la correspondiente
+      let stationData: any = null;
+      if (Array.isArray(rawData)) {
+        const searchId = String(stationId).toLowerCase();
+        stationData = rawData.find((st: any) =>
+          String(st.station?.id).toLowerCase() === searchId ||
+          String(st.station?.shortcode).toLowerCase() === searchId
+        ) || rawData[0];
+      } else if (rawData && typeof rawData === 'object') {
+        stationData = rawData;
+      }
+
+      if (!stationData) {
+        return res.status(404).json({ error: 'Estación no encontrada en AzuraCast' });
+      }
+
+      // Si song_history está vacío en nowplaying, intentar enriquecerlo con /api/station/{id}/history
+      if (!stationData.song_history || stationData.song_history.length === 0) {
+        try {
+          const historyUrl = `${cleanBase}/api/station/${encodeURIComponent(stationId)}/history`;
+          const historyList = await fetchAzuraData(historyUrl, apiKey);
+          if (Array.isArray(historyList) && historyList.length > 0) {
+            stationData.song_history = historyList;
+          }
+        } catch {
+          // Si no está disponible o requiere auth privada, continuar con lo obtenido
+        }
+      }
+
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.json(stationData);
+    } catch (error: any) {
+      return res.status(502).json({
+        error: error.message || 'Error al conectar con AzuraCast',
+        details: 'Verifica la URL del servidor AzuraCast y que el streaming esté activo.'
+      });
+    }
+  });
+
+  app.get('/api/azuracast/history/:station_id', async (req: Request, res: Response) => {
+    try {
+      const stationId = req.params.station_id;
+      const customBase = (req.query.base_url as string || defaultAzuraBase).trim().replace(/\/+$/, '');
+      const apiKey = (req.query.api_key as string || defaultAzuraApiKey).trim();
+
+      const historyUrl = `${customBase}/api/station/${encodeURIComponent(stationId)}/history`;
+      const historyList = await fetchAzuraData(historyUrl, apiKey);
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.json(historyList);
+    } catch (error: any) {
+      return res.status(502).json({ error: error.message || 'Error al obtener historial de AzuraCast' });
+    }
+  });
+
   // Vite middleware for SPA and static asset handling
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

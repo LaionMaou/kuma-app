@@ -1,8 +1,8 @@
 package stream.kuma.radio.data.api
 
 import stream.kuma.radio.data.RadioConfig
-import stream.kuma.radio.data.model.AzuraCastNowPlaying
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -16,19 +16,27 @@ interface AzuraCastApi {
     @GET("api/nowplaying/{station_id}")
     suspend fun getNowPlaying(
         @Path("station_id") stationId: String
-    ): AzuraCastNowPlaying
+    ): JsonElement
+
+    @GET("api/nowplaying")
+    suspend fun getNowPlayingAll(): JsonElement
+
+    @GET("api/station/{station_id}/history")
+    suspend fun getStationHistory(
+        @Path("station_id") stationId: String
+    ): JsonElement
 }
 
 object ApiClient {
-    private val json = Json {
+    val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
         isLenient = true
     }
 
     val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
             val requestBuilder = original.newBuilder()
@@ -45,8 +53,10 @@ object ApiClient {
         .build()
 
     val azuraCastApi: AzuraCastApi by lazy {
+        val rawBase = RadioConfig.AZURACAST_BASE_URL.trim()
+        val cleanBase = if (rawBase.endsWith("/")) rawBase else "$rawBase/"
         Retrofit.Builder()
-            .baseUrl(RadioConfig.AZURACAST_BASE_URL)
+            .baseUrl(cleanBase)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()

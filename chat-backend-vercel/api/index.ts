@@ -242,4 +242,69 @@ const deleteMessageHandler = async (req: Request, res: Response) => {
 app.delete('/api/chat/messages/:id', deleteMessageHandler);
 app.delete('/messages/:id', deleteMessageHandler);
 
+// 6. AzuraCast NowPlaying & History Proxy (CORS / Mixed Content Bypass)
+const azuraProxyHandler = async (req: Request, res: Response) => {
+  try {
+    const rawStationId = req.params.station_id || req.query.station_id as string || '';
+    const customBase = (req.query.base_url as string || process.env.AZURACAST_BASE_URL || 'https://radio.kumakuma.fm').trim().replace(/\/+$/, '');
+    const apiKey = (req.query.api_key as string || process.env.AZURACAST_API_KEY || '').trim();
+
+    let cleanBase = customBase;
+    let detectedStationId = rawStationId;
+    if (cleanBase.includes('/api/nowplaying')) {
+      const parts = cleanBase.split('/api/nowplaying');
+      cleanBase = parts[0];
+      if (!detectedStationId && parts[1]) {
+        detectedStationId = parts[1].replace(/^\/+/, '');
+      }
+    }
+    const stationId = detectedStationId || '1';
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'KumaKumaRadio-VercelProxy/1.0'
+    };
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    let rawData: any = null;
+    try {
+      const targetUrl = `${cleanBase}/api/nowplaying/${encodeURIComponent(stationId)}`;
+      const resp = await fetch(targetUrl, { headers });
+      if (resp.ok) rawData = await resp.json();
+    } catch {}
+
+    if (!rawData) {
+      const allUrl = `${cleanBase}/api/nowplaying`;
+      const allResp = await fetch(allUrl, { headers });
+      if (allResp.ok) rawData = await allResp.json();
+    }
+
+    let stationData: any = null;
+    if (Array.isArray(rawData)) {
+      const searchId = String(stationId).toLowerCase();
+      stationData = rawData.find((st: any) =>
+        String(st.station?.id).toLowerCase() === searchId ||
+        String(st.station?.shortcode).toLowerCase() === searchId
+      ) || rawData[0];
+    } else if (rawData && typeof rawData === 'object') {
+      stationData = rawData;
+    }
+
+    if (!stationData) {
+      return res.status(404).json({ error: 'Estación no encontrada en AzuraCast' });
+    }
+
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.json(stationData);
+  } catch (err: any) {
+    return res.status(502).json({ error: err.message || 'Error en proxy AzuraCast' });
+  }
+};
+
+app.get('/api/azuracast/nowplaying', azuraProxyHandler);
+app.get('/api/azuracast/nowplaying/:station_id', azuraProxyHandler);
+
 export default app;

@@ -29,7 +29,11 @@ export default function App() {
       setStation((prev) => {
         const isLive = data.live?.is_live === true;
         const streamer = data.live?.streamer_name;
-        const updatedTrack = data.now_playing?.song?.title
+        const hasValidSong = Boolean(
+          data.now_playing?.song?.title?.trim() ||
+          data.now_playing?.song?.text?.trim()
+        );
+        const updatedTrack = hasValidSong
           ? azuracastService.toTrackModel(data)
           : prev.currentTrack;
 
@@ -158,6 +162,7 @@ export default function App() {
             {activeTab === 'historial' && (
               <HistoryScreen
                 theme={theme}
+                station={station}
                 onSelectTrack={(t) => {
                   setStation((prev) => ({ ...prev, currentTrack: t }));
                   setActiveTab('en-vivo');

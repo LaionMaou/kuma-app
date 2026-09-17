@@ -1,6 +1,7 @@
 package stream.kuma.radio.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class Station(
@@ -137,7 +138,7 @@ data class AzuraLive(
 
 @Serializable
 data class AzuraStationInfo(
-    val id: Int? = null,
+    val id: JsonElement? = null,
     val name: String? = null,
     val shortcode: String? = null,
     val description: String? = null,
@@ -157,12 +158,12 @@ data class AzuraListeners(
 data class AzuraCurrentPlaying(
     val sh_id: Long? = null,
     val played_at: Long? = null,
-    val duration: Long = 0,
+    val duration: Double = 0.0,
     val playlist: String? = null,
     val streamer: String? = null,
     val is_request: Boolean = false,
-    val elapsed: Long = 0,
-    val remaining: Long = 0,
+    val elapsed: Double = 0.0,
+    val remaining: Double = 0.0,
     val song: AzuraSong? = null
 )
 
@@ -183,6 +184,9 @@ data class AzuraSong(
 data class AzuraHistoryItem(
     val sh_id: Long? = null,
     val played_at: Long? = null,
-    val duration: Long = 0,
+    val duration: Double = 0.0,
+    val playlist: String? = null,
+    val streamer: String? = null,
+    val is_request: Boolean = false,
     val song: AzuraSong? = null
 )
