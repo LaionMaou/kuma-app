@@ -67,8 +67,8 @@ async function getStoredMessages(): Promise<ChatMessage[]> {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const data = await res.json();
-        if (data.result) {
+        const data = (await res.json()) as { result?: string } | null;
+        if (data && data.result) {
           const parsed = JSON.parse(data.result);
           if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed;
