@@ -1,5 +1,6 @@
 package stream.kuma.radio.data.api
 
+import stream.kuma.radio.BuildConfig
 import stream.kuma.radio.data.RadioConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -34,22 +35,45 @@ object ApiClient {
         isLenient = true
     }
 
+    private val azuraCastHost: String? = runCatching {
+        java.net.URI(RadioConfig.AZURACAST_BASE_URL).host
+    }.getOrNull()
+
+    private fun OkHttpClient.Builder.applyDebugLogging(): OkHttpClient.Builder = apply {
+        if (BuildConfig.DEBUG) {
+            addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
+        }
+    }
+
     val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
-            val requestBuilder = original.newBuilder()
-            // Adjunta API Key de AzuraCast si está configurada
-            if (RadioConfig.AZURACAST_API_KEY.isNotBlank()) {
-                requestBuilder.header("X-API-Key", RadioConfig.AZURACAST_API_KEY)
-                requestBuilder.header("Authorization", "Bearer ${RadioConfig.AZURACAST_API_KEY}")
+            // La credencial solo viaja al host de AzuraCast, nunca a terceros.
+            val isAzuraCastHost = azuraCastHost
+                ?.equals(original.url.host, ignoreCase = true) == true
+            if (BuildConfig.AZURACAST_API_KEY.isNotBlank() && isAzuraCastHost) {
+                chain.proceed(
+                    original.newBuilder()
+                        .header("X-API-Key", BuildConfig.AZURACAST_API_KEY)
+                        .header("Authorization", "Bearer ${BuildConfig.AZURACAST_API_KEY}")
+                        .build()
+                )
+            } else {
+                chain.proceed(original)
             }
-            chain.proceed(requestBuilder.build())
         }
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        })
+        .applyDebugLogging()
+        .build()
+
+    // Cliente sin credenciales para imágenes y cualquier host de terceros.
+    val imageOkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .applyDebugLogging()
         .build()
 
     val azuraCastApi: AzuraCastApi by lazy {

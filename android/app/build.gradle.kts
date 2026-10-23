@@ -1,9 +1,26 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
+
+// local.properties no lo lee Gradle por sí solo; gradle.properties y el entorno sí.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+val azuraCastApiKey: String = (
+    localProperties.getProperty("AZURACAST_API_KEY")
+        ?: providers.gradleProperty("AZURACAST_API_KEY").orNull
+        ?: providers.environmentVariable("AZURACAST_API_KEY").orNull
+        ?: ""
+    )
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
 
 android {
     namespace = "stream.kuma.radio"
@@ -14,7 +31,10 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "2.4.1"
+        versionName = "0.0.19 rc-15"
+
+        // La clave nunca se versiona: se inyecta desde local.properties o el entorno.
+        buildConfigField("String", "AZURACAST_API_KEY", "\"$azuraCastApiKey\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

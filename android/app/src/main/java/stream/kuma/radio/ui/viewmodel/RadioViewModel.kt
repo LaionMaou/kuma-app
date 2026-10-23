@@ -3,15 +3,20 @@ package stream.kuma.radio.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import stream.kuma.radio.data.AuthSecurityConfig
 import stream.kuma.radio.data.RadioConfig
 import stream.kuma.radio.data.api.ApiClient
 import stream.kuma.radio.data.api.ChatApiClient
 import stream.kuma.radio.data.model.AuthProvider
 import stream.kuma.radio.data.model.AuthUser
 import stream.kuma.radio.data.model.BackendChatMessageDto
+import stream.kuma.radio.data.model.BackendLiveStatus
 import stream.kuma.radio.data.model.BackendSendMessageRequest
+import stream.kuma.radio.data.model.BackendSongRequestDto
+import stream.kuma.radio.data.model.BackendSubmitSongRequest
+import stream.kuma.radio.data.model.BackendUpdateSongRequestStatus
+import stream.kuma.radio.data.model.DjLoginRequest
 import stream.kuma.radio.data.model.ChatMessage
+import stream.kuma.radio.data.model.SongCatalogItem
 import stream.kuma.radio.data.model.Dj
 import stream.kuma.radio.data.model.EqualizerBand
 import stream.kuma.radio.data.model.EqualizerPreset
@@ -36,6 +41,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -49,6 +55,10 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _djErrorMessage = MutableStateFlow<String?>(null)
     val djErrorMessage: StateFlow<String?> = _djErrorMessage.asStateFlow()
+
+    // Token de cabina emitido por el backend; nunca se deriva de una clave local.
+    private var djToken: String? = null
+    private var djTokenExpiresAt: Long = 0L
 
     // Single Station & Mount Point (Fixed Bitrate)
     private val _currentStation = MutableStateFlow(
@@ -124,6 +134,31 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
     )
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
+    // Avisos de una sola vez para la interfaz (snackbar).
+    private val _uiEvent = MutableStateFlow<String?>(null)
+    val uiEvent: StateFlow<String?> = _uiEvent.asStateFlow()
+
+    // Ids borrados por el DJ que el polling todavía podría devolver.
+    private val deletedServerIds = mutableSetOf<String>()
+
+    // Pedidos de canciones
+    private val _songCatalog = MutableStateFlow<List<SongCatalogItem>>(emptyList())
+    val songCatalog: StateFlow<List<SongCatalogItem>> = _songCatalog.asStateFlow()
+
+    private val _isSearchingSongs = MutableStateFlow(false)
+    val isSearchingSongs: StateFlow<Boolean> = _isSearchingSongs.asStateFlow()
+
+    private val _isSubmittingSongRequest = MutableStateFlow(false)
+    val isSubmittingSongRequest: StateFlow<Boolean> = _isSubmittingSongRequest.asStateFlow()
+
+    private val _songRequests = MutableStateFlow<List<BackendSongRequestDto>>(emptyList())
+    val songRequests: StateFlow<List<BackendSongRequestDto>> = _songRequests.asStateFlow()
+
+    private val _liveStatus = MutableStateFlow(BackendLiveStatus())
+    val liveStatus: StateFlow<BackendLiveStatus> = _liveStatus.asStateFlow()
+
+    private var catalogSearchJob: Job? = null
+
     // Audio Effects Manager Reference
     val audioEffects: AudioEffectsManager = RadioPlayerService.audioEffectsManager
 
@@ -172,47 +207,6 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun handleAuthCallback(provider: AuthProvider, uriData: String) {
-        when (provider) {
-            AuthProvider.DISCORD -> {
-                var extractedUser = "DiscordListener"
-                if (uriData.contains("access_token=")) {
-                    val token = uriData.substringAfter("access_token=").substringBefore("&")
-                    extractedUser = "Discord_${token.take(4)}"
-                }
-                val user = AuthUser(
-                    id = "discord_${System.currentTimeMillis()}",
-                    username = extractedUser,
-                    provider = AuthProvider.DISCORD,
-                    avatarUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=80"
-                )
-                _currentUser.value = user
-                sendChatMessage("✨ ¡Me he autenticado con mi cuenta de Discord!", usernameOverride = user.username)
-            }
-            AuthProvider.GOOGLE -> {
-                val user = AuthUser(
-                    id = "google_${System.currentTimeMillis()}",
-                    username = "Oyente Google",
-                    provider = AuthProvider.GOOGLE,
-                    avatarUrl = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80"
-                )
-                _currentUser.value = user
-                sendChatMessage("🌐 ¡Conectado exitosamente con Google!", usernameOverride = user.username)
-            }
-            AuthProvider.X -> {
-                val user = AuthUser(
-                    id = "x_${System.currentTimeMillis()}",
-                    username = "@KumaFan",
-                    provider = AuthProvider.X,
-                    avatarUrl = "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&auto=format&fit=crop&q=80"
-                )
-                _currentUser.value = user
-                sendChatMessage("✖️ ¡Conectado con X (Twitter)!", usernameOverride = user.username)
-            }
-            else -> {}
-        }
-    }
-
     fun toggleLikeCurrentTrack() {
         val current = _currentTrack.value
         _currentTrack.value = current.copy(isLiked = !current.isLiked)
@@ -248,65 +242,286 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
         _isDarkTheme.value = !_isDarkTheme.value
     }
 
-    fun loginWithProvider(provider: AuthProvider, customUsername: String = "") {
-        val user = when (provider) {
-            AuthProvider.DISCORD -> AuthUser(
-                id = "discord_${System.currentTimeMillis()}",
-                username = if (customUsername.isNotBlank()) customUsername else "KumaDiscordFan#4200",
-                provider = AuthProvider.DISCORD,
-                avatarUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=80"
-            )
-            AuthProvider.GOOGLE -> AuthUser(
-                id = "google_${System.currentTimeMillis()}",
-                username = if (customUsername.isNotBlank()) customUsername else "Oyente Google",
-                provider = AuthProvider.GOOGLE,
-                avatarUrl = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80"
-            )
-            AuthProvider.X -> AuthUser(
-                id = "x_${System.currentTimeMillis()}",
-                username = if (customUsername.isNotBlank()) "@$customUsername" else "@KumaOtaku",
-                provider = AuthProvider.X,
-                avatarUrl = "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&auto=format&fit=crop&q=80"
-            )
-            AuthProvider.GUEST -> AuthUser(
-                id = "guest_${System.currentTimeMillis()}",
-                username = if (customUsername.isNotBlank()) customUsername else "Oyente_${(100..999).random()}",
-                provider = AuthProvider.GUEST
-            )
-            AuthProvider.DJ -> AuthUser(
-                id = "dj_master",
-                username = AuthSecurityConfig.DEFAULT_DJ_NAME,
-                provider = AuthProvider.DJ,
-                avatarUrl = AuthSecurityConfig.DEFAULT_DJ_AVATAR,
-                isDj = true
-            )
-        }
-        _currentUser.value = user
+    fun loginAsGuest(customUsername: String = "") {
+        _currentUser.value = AuthUser(
+            id = "guest_${System.currentTimeMillis()}",
+            username = if (customUsername.isNotBlank()) customUsername else "Oyente_${(100..999).random()}",
+            provider = AuthProvider.GUEST
+        )
+    }
+
+    private fun loginAsDj() {
+        _currentUser.value = AuthUser(
+            id = "dj_master",
+            username = RadioConfig.DEFAULT_DJ_NAME,
+            provider = AuthProvider.DJ,
+            avatarUrl = RadioConfig.DEFAULT_DJ_AVATAR,
+            isDj = true
+        )
     }
 
     fun logout() {
         _currentUser.value = null
-        if (_isDjAuthenticated.value) {
-            _isDjAuthenticated.value = false
-        }
+        clearDjSession()
     }
 
-    fun authenticateDj(passkey: String): Boolean {
-        if (passkey.trim() == AuthSecurityConfig.DJ_CABIN_PASSKEY) {
-            _isDjAuthenticated.value = true
-            _djErrorMessage.value = null
-            loginWithProvider(AuthProvider.DJ)
-            return true
-        } else {
-            _djErrorMessage.value = "Clave de cabina incorrecta. Acceso restringido."
-            return false
+    fun authenticateDj(passkey: String) {
+        val trimmed = passkey.trim()
+        if (trimmed.isBlank()) {
+            _djErrorMessage.value = "Ingresa la clave de cabina."
+            return
+        }
+        _djErrorMessage.value = null
+        viewModelScope.launch {
+            try {
+                val response = ChatApiClient.chatApi.loginDj(DjLoginRequest(trimmed))
+                val token = response.token
+                if (response.success && !token.isNullOrBlank()) {
+                    djToken = token
+                    djTokenExpiresAt = response.expiresAt ?: 0L
+                    _isDjAuthenticated.value = true
+                    loginAsDj()
+                } else {
+                    _djErrorMessage.value = "Clave de cabina incorrecta. Acceso restringido."
+                }
+            } catch (e: HttpException) {
+                _djErrorMessage.value = when (e.code()) {
+                    401 -> "Clave de cabina incorrecta. Acceso restringido."
+                    503 -> "La cabina DJ no está configurada en el servidor."
+                    else -> "No se pudo validar la clave (${e.code()})."
+                }
+            } catch (e: Exception) {
+                _djErrorMessage.value = "Sin conexión con el servidor. Inténtalo de nuevo."
+            }
         }
     }
 
     fun lockDjCabin() {
-        _isDjAuthenticated.value = false
+        clearDjSession()
         if (_currentUser.value?.isDj == true) {
             _currentUser.value = null
+        }
+    }
+
+    private fun clearDjSession() {
+        djToken = null
+        djTokenExpiresAt = 0L
+        _isDjAuthenticated.value = false
+        _songRequests.value = emptyList()
+    }
+
+    fun consumeUiEvent() {
+        _uiEvent.value = null
+    }
+
+    private fun emitEvent(message: String) {
+        _uiEvent.value = message
+    }
+
+    private fun requireDjToken(notifyExpired: Boolean = true): String? {
+        val token = djToken
+        val valid = _isDjAuthenticated.value && !token.isNullOrBlank() &&
+            (djTokenExpiresAt <= 0L || djTokenExpiresAt > System.currentTimeMillis())
+        if (!valid) {
+            clearDjSession()
+            if (notifyExpired) emitEvent("La sesión de cabina venció. Vuelve a ingresar la clave.")
+            return null
+        }
+        return token
+    }
+
+    fun deleteChatMessage(message: ChatMessage) {
+        val token = requireDjToken() ?: return
+        val serverId = message.serverId
+        if (serverId.isNullOrBlank()) {
+            emitEvent("Ese mensaje todavía no está sincronizado. Espera unos segundos.")
+            return
+        }
+
+        val previous = _messages.value
+        deletedServerIds.add(serverId)
+        _messages.value = previous.filterNot { it.serverId == serverId }
+
+        viewModelScope.launch {
+            try {
+                val response = ChatApiClient.chatApi.deleteMessage(serverId, token)
+                if (!response.success) {
+                    throw IllegalStateException(response.error ?: "El servidor no confirmó el borrado")
+                }
+                emitEvent("Mensaje eliminado.")
+            } catch (e: HttpException) {
+                deletedServerIds.remove(serverId)
+                _messages.value = previous
+                when (e.code()) {
+                    403 -> {
+                        clearDjSession()
+                        emitEvent("La sesión de cabina venció. Vuelve a ingresar la clave.")
+                    }
+                    404 -> emitEvent("Ese mensaje ya no existía.")
+                    else -> emitEvent("No se pudo eliminar el mensaje (${e.code()}).")
+                }
+            } catch (e: Exception) {
+                deletedServerIds.remove(serverId)
+                _messages.value = previous
+                emitEvent("Sin conexión: no se pudo eliminar el mensaje.")
+            }
+        }
+    }
+
+    private fun mapBackendMessage(dto: BackendChatMessageDto): ChatMessage? {
+        val text = dto.text ?: return null
+        val serverId = dto.id?.takeIf { it.isNotBlank() }
+        val isDj = dto.isDj == true || dto.userType == "dj"
+        val provider = when (dto.userType) {
+            "discord" -> AuthProvider.DISCORD
+            "google" -> AuthProvider.GOOGLE
+            "x" -> AuthProvider.X
+            "dj" -> AuthProvider.DJ
+            else -> AuthProvider.GUEST
+        }
+        val badge = dto.tag ?: when {
+            isDj -> "👑 DJ EN VIVO"
+            provider == AuthProvider.DISCORD -> "🤖 Discord"
+            provider == AuthProvider.GOOGLE -> "🌐 Google"
+            provider == AuthProvider.X -> "𝕏 Twitter"
+            else -> "Oyente"
+        }
+        return ChatMessage(
+            id = serverId ?: "local_${dto.hashCode()}",
+            username = dto.sender ?: "Oyente",
+            text = text,
+            timestamp = dto.time ?: "Ahora",
+            badge = badge,
+            isDj = isDj,
+            provider = provider,
+            avatarUrl = dto.avatar ?: "",
+            likes = dto.likes ?: 1,
+            isSongRequest = dto.isSongRequest == true,
+            serverId = serverId
+        )
+    }
+
+    fun searchRequestableSongs(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _songCatalog.value = emptyList()
+            return
+        }
+
+        catalogSearchJob?.cancel()
+        catalogSearchJob = viewModelScope.launch {
+            delay(350)
+            _isSearchingSongs.value = true
+            try {
+                val response = ChatApiClient.chatApi.searchRequestableSongs(trimmed)
+                _songCatalog.value = response.results
+            } catch (e: Exception) {
+                _songCatalog.value = emptyList()
+                emitEvent("No se pudo buscar en el catálogo. Revisa la conexión.")
+            } finally {
+                _isSearchingSongs.value = false
+            }
+        }
+    }
+
+    fun clearSongCatalog() {
+        catalogSearchJob?.cancel()
+        _songCatalog.value = emptyList()
+        _isSearchingSongs.value = false
+    }
+
+    fun submitSongRequest(query: String, song: SongCatalogItem?, message: String?) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            emitEvent("Elegí una canción para pedir.")
+            return
+        }
+        if (_isSubmittingSongRequest.value) return
+
+        _isSubmittingSongRequest.value = true
+        viewModelScope.launch {
+            try {
+                val response = ChatApiClient.chatApi.submitSongRequest(
+                    BackendSubmitSongRequest(
+                        query = trimmed,
+                        requestedBy = _currentUser.value?.username ?: "Oyente",
+                        requestId = song?.requestId?.takeIf { it.isNotBlank() },
+                        message = message?.trim()?.takeIf { it.isNotBlank() }
+                    )
+                )
+                response.live?.let { _liveStatus.value = it }
+                val label = song?.let { "${it.artist} - ${it.title}".trim(' ', '-') } ?: trimmed
+                if (response.status == "queued") {
+                    emitEvent("🎵 Pedido en cola: $label")
+                } else {
+                    emitEvent("Pedido recibido: el DJ lo revisará.")
+                }
+            } catch (e: HttpException) {
+                emitEvent(
+                    when (e.code()) {
+                        409 -> "Ese pedido ya está en la lista. Esperá a que el DJ lo ponga."
+                        429 -> "Demasiados pedidos seguidos. Probá en unos minutos."
+                        400 -> "El pedido está incompleto."
+                        else -> "No se pudo enviar el pedido (${e.code()})."
+                    }
+                )
+            } catch (e: Exception) {
+                emitEvent("Sin conexión: no se pudo enviar el pedido.")
+            } finally {
+                _isSubmittingSongRequest.value = false
+            }
+        }
+    }
+
+    fun loadSongRequests() {
+        val token = requireDjToken(notifyExpired = false) ?: return
+        viewModelScope.launch {
+            try {
+                val response = ChatApiClient.chatApi.getSongRequests(token)
+                if (response.success) {
+                    _songRequests.value = response.requests
+                    response.live?.let { _liveStatus.value = it }
+                }
+            } catch (e: HttpException) {
+                if (e.code() == 403) {
+                    clearDjSession()
+                    emitEvent("La sesión de cabina venció. Vuelve a ingresar la clave.")
+                }
+            } catch (_: Exception) {
+                // Un refresco fallido no debe vaciar la lista que ya se ve.
+            }
+        }
+    }
+
+    fun updateSongRequestStatus(requestId: String, status: String) {
+        val token = requireDjToken() ?: return
+        viewModelScope.launch {
+            try {
+                val response = ChatApiClient.chatApi.updateSongRequestStatus(
+                    requestId = requestId,
+                    request = BackendUpdateSongRequestStatus(status),
+                    djToken = token
+                )
+                val updated = response.request
+                if (response.success && updated != null) {
+                    _songRequests.value = _songRequests.value
+                        .map { if (it.id == requestId) updated else it }
+                        .filter { it.status == "pending" || it.status == "queued" }
+                } else {
+                    emitEvent("No se pudo actualizar el pedido.")
+                }
+            } catch (e: HttpException) {
+                when (e.code()) {
+                    403 -> {
+                        clearDjSession()
+                        emitEvent("La sesión de cabina venció. Vuelve a ingresar la clave.")
+                    }
+                    404 -> emitEvent("Ese pedido ya no existe.")
+                    else -> emitEvent("No se pudo actualizar el pedido (${e.code()}).")
+                }
+            } catch (e: Exception) {
+                emitEvent("Sin conexión: no se pudo actualizar el pedido.")
+            }
         }
     }
 
@@ -356,7 +571,15 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                     tag = badge,
                     isSongRequest = text.startsWith("🎵") || text.contains("peticion", ignoreCase = true)
                 )
-                ChatApiClient.chatApi.sendMessage(req)
+                val validDjToken = if (isDjMessage) requireDjToken(notifyExpired = false) else null
+                val response = ChatApiClient.chatApi.sendMessage(req, validDjToken)
+                val serverId = response.message?.id
+                if (response.success && !serverId.isNullOrBlank()) {
+                    // El mensaje optimista adopta el id real para poder moderarlo.
+                    _messages.value = _messages.value.map {
+                        if (it.id == localId) it.copy(serverId = serverId) else it
+                    }
+                }
             } catch (e: Exception) {
                 // Si el backend no responde, el mensaje permanece en la interfaz localmente
             }
@@ -369,37 +592,18 @@ class RadioViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     val response = ChatApiClient.chatApi.getMessages()
                     if (response.success && response.messages.isNotEmpty()) {
-                        val mapped = response.messages.mapNotNull { dto ->
-                            dto.text?.let { msgText ->
-                                val isDj = dto.isDj == true || dto.userType == "dj"
-                                val prov = when (dto.userType) {
-                                    "discord" -> AuthProvider.DISCORD
-                                    "google" -> AuthProvider.GOOGLE
-                                    "x" -> AuthProvider.X
-                                    "dj" -> AuthProvider.DJ
-                                    else -> AuthProvider.GUEST
-                                }
-                                val badge = dto.tag ?: when {
-                                    isDj -> "👑 DJ EN VIVO"
-                                    prov == AuthProvider.DISCORD -> "🤖 Discord"
-                                    prov == AuthProvider.GOOGLE -> "🌐 Google"
-                                    prov == AuthProvider.X -> "𝕏 Twitter"
-                                    else -> "Oyente"
-                                }
-                                ChatMessage(
-                                    id = dto.id ?: "msg_${dto.hashCode()}",
-                                    username = dto.sender ?: "Oyente",
-                                    text = msgText,
-                                    timestamp = dto.time ?: "Ahora",
-                                    badge = badge,
-                                    isDj = isDj,
-                                    provider = prov,
-                                    avatarUrl = dto.avatar ?: "",
-                                    likes = dto.likes ?: 1,
-                                    isSongRequest = dto.isSongRequest == true
-                                )
+                        val serverIds = response.messages.mapNotNull { it.id?.takeIf { id -> id.isNotBlank() } }
+
+                        // Un mensaje borrado por el DJ no puede reaparecer en el siguiente poll.
+                        deletedServerIds.removeAll { it !in serverIds }
+
+                        val mapped = response.messages
+                            .mapNotNull { mapBackendMessage(it) }
+                            .filterNot { message ->
+                                val id = message.serverId
+                                id != null && id in deletedServerIds
                             }
-                        }
+
                         if (mapped.isNotEmpty()) {
                             _messages.value = mapped
                         }

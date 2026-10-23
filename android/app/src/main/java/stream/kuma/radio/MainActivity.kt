@@ -1,6 +1,5 @@
 package stream.kuma.radio
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,13 +8,16 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import stream.kuma.radio.data.model.AuthProvider
 import stream.kuma.radio.ui.navigation.BottomNavigationBar
 import stream.kuma.radio.ui.navigation.Screen
 import stream.kuma.radio.ui.screens.CommunityScreen
@@ -34,15 +36,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        handleDeepLink(intent)
-
         setContent {
             val isDarkTheme by viewModel.isDarkTheme.collectAsState()
             val navController = rememberNavController()
+            val snackbarHostState = remember { SnackbarHostState() }
+            val uiEvent by viewModel.uiEvent.collectAsState()
+
+            LaunchedEffect(uiEvent) {
+                val message = uiEvent ?: return@LaunchedEffect
+                snackbarHostState.showSnackbar(message)
+                viewModel.consumeUiEvent()
+            }
 
             KumaKumaRadioTheme(isDarkTheme = isDarkTheme) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
                     bottomBar = {
                         BottomNavigationBar(navController = navController)
                     }
@@ -83,27 +92,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        handleDeepLink(intent)
-    }
-
-    private fun handleDeepLink(intent: Intent?) {
-        val uri = intent?.data ?: return
-        if (uri.scheme == "stream.kuma.radio" && uri.host == "oauth") {
-            val path = uri.path ?: ""
-            val fullPayload = uri.fragment ?: uri.query ?: ""
-            when {
-                path.contains("discord") -> {
-                    viewModel.handleAuthCallback(AuthProvider.DISCORD, fullPayload)
-                }
-                path.contains("google") -> {
-                    viewModel.handleAuthCallback(AuthProvider.GOOGLE, fullPayload)
-                }
-                path.contains("x") -> {
-                    viewModel.handleAuthCallback(AuthProvider.X, fullPayload)
-                }
-            }
-        }
-    }
 }
