@@ -26,7 +26,7 @@ class KumaApplication : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
-            .okHttpClient(ApiClient.okHttpClient)
+            .okHttpClient(ApiClient.imageOkHttpClient)
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25)

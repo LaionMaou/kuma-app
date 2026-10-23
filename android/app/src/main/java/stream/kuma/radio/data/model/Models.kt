@@ -76,7 +76,9 @@ data class ChatMessage(
     val provider: AuthProvider = AuthProvider.GUEST,
     val avatarUrl: String = "",
     val likes: Int = 1,
-    val isSongRequest: Boolean = false
+    val isSongRequest: Boolean = false,
+    // Id real en el backend. Es null mientras el mensaje todavía no se sincronizó.
+    val serverId: String? = null
 )
 
 // DTOs para comunicación con el backend Express de Chat
@@ -116,6 +118,108 @@ data class BackendSendMessageRequest(
 data class BackendSendMessageResponse(
     val success: Boolean = false,
     val message: BackendChatMessageDto? = null
+)
+
+@Serializable
+data class DjLoginRequest(
+    val passkey: String
+)
+
+@Serializable
+data class DjLoginResponse(
+    val success: Boolean = false,
+    val token: String? = null,
+    val expiresAt: Long? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class BackendDeleteMessageResponse(
+    val success: Boolean = false,
+    val deletedId: String? = null,
+    val error: String? = null
+)
+
+// Pedidos de canciones (caché local del catálogo y panel del DJ)
+@Serializable
+data class SongCatalogItem(
+    val requestId: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val artUrl: String = ""
+)
+
+@Serializable
+data class SongCatalogResponse(
+    val success: Boolean = false,
+    val results: List<SongCatalogItem> = emptyList(),
+    val total: Int = 0,
+    val error: String? = null
+)
+
+@Serializable
+data class BackendLiveStatus(
+    val isLive: Boolean = false,
+    val streamer: String? = null
+)
+
+@Serializable
+data class BackendSongRequestDto(
+    val id: String = "",
+    val query: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val artUrl: String = "",
+    val requestId: String? = null,
+    val status: String = "pending",
+    val source: String = "manual",
+    val requestedBy: String = "Oyente",
+    val message: String? = null,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
+    val failureReason: String? = null,
+    val liveAtRequest: Boolean = false
+)
+
+@Serializable
+data class BackendSubmitSongRequest(
+    val query: String,
+    val requestedBy: String? = null,
+    val requestId: String? = null,
+    val message: String? = null
+)
+
+@Serializable
+data class BackendSongRequestResponse(
+    val success: Boolean = false,
+    val status: String = "pending",
+    val message: String? = null,
+    val request: BackendSongRequestDto? = null,
+    val live: BackendLiveStatus? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class BackendSongRequestListResponse(
+    val success: Boolean = false,
+    val requests: List<BackendSongRequestDto> = emptyList(),
+    val count: Int = 0,
+    val live: BackendLiveStatus? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class BackendUpdateSongRequestStatus(
+    val status: String
+)
+
+@Serializable
+data class BackendSongRequestUpdateResponse(
+    val success: Boolean = false,
+    val request: BackendSongRequestDto? = null,
+    val error: String? = null
 )
 
 // AzuraCast API Response Models

@@ -38,6 +38,18 @@ Aplicación oficial nativa de radio en vivo para Android, diseñada con **Materi
 4. Conecta un dispositivo Android (físico con depuración USB o emulador AVD con Android 8.0+ / API 26+).
 5. Presiona **Run 'app'** (`Shift + F10`).
 
+### 🔐 Configuración opcional de AzuraCast
+
+La API key de AzuraCast **no está en el código**. Si necesitas autenticación contra el panel, añádela en
+`local.properties` (ignorado por git) o en el entorno:
+
+```properties
+AZURACAST_API_KEY=tu_clave_de_azucarast
+```
+
+Gradle la inyecta como `BuildConfig.AZURACAST_API_KEY` y solo se envía al host de `AZURACAST_BASE_URL`.
+El endpoint público `/api/nowplaying` del streaming no la necesita.
+
 ---
 
 ## 📦 Estructura del Proyecto
@@ -60,8 +72,7 @@ android/
         │   ├── data/
         │   │   ├── api/AzuraCastApi.kt
         │   │   ├── model/Models.kt
-        │   │   ├── RadioConfig.kt            # Enlaces de streaming y AzuraCast
-        │   │   └── AuthSecurityConfig.kt     # Credenciales SSO y Passkey Cabina DJ
+        │   │   └── RadioConfig.kt            # Enlaces de streaming y AzuraCast
         │   ├── service/
         │   │   ├── AudioEffectsManager.kt    # Librerías nativas android.media.audiofx
         │   │   └── RadioPlayerService.kt     # Media3 Foreground Service
@@ -71,7 +82,7 @@ android/
         │       │   ├── PlayerScreen.kt
         │       │   ├── EqualizerScreen.kt
         │       │   ├── HistoryScreen.kt
-        │       │   ├── CommunityScreen.kt    # Chat SSO e interfaz de Cabina DJ protegida
+        │       │   ├── CommunityScreen.kt    # Chat de la comunidad y cabina DJ
         │       │   └── SettingsScreen.kt
         │       ├── theme/
         │       │   ├── Color.kt

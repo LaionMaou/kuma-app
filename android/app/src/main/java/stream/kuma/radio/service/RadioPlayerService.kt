@@ -340,7 +340,11 @@ class RadioPlayerService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        return mediaSession
+        val isSameApp = controllerInfo.uid == android.os.Process.myUid()
+        // Los UIDs de sistema (< 10000) cubren Bluetooth, Android Auto y el asistente;
+        // ninguna app de terceros puede controlar la reproducción.
+        val isSystemController = controllerInfo.uid < android.os.Process.FIRST_APPLICATION_UID
+        return if (isSameApp || isSystemController) mediaSession else null
     }
 
     override fun onDestroy() {

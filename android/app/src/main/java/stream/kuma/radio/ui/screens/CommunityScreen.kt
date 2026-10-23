@@ -1,8 +1,5 @@
 package stream.kuma.radio.ui.screens
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Send
@@ -31,15 +30,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,28 +51,43 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import stream.kuma.radio.data.AuthSecurityConfig
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import stream.kuma.radio.data.model.AuthProvider
+import stream.kuma.radio.data.model.BackendLiveStatus
+import stream.kuma.radio.data.model.BackendSongRequestDto
+import stream.kuma.radio.data.model.ChatMessage
 import stream.kuma.radio.ui.theme.DjPurple
 import stream.kuma.radio.ui.viewmodel.RadioViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(viewModel: RadioViewModel) {
-    val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val isDjAuthenticated by viewModel.isDjAuthenticated.collectAsState()
     val djErrorMessage by viewModel.djErrorMessage.collectAsState()
+    val songRequests by viewModel.songRequests.collectAsState()
+    val liveStatus by viewModel.liveStatus.collectAsState()
 
     var inputMessage by remember { mutableStateOf("") }
     var showAuthDialog by remember { mutableStateOf(false) }
     var showDjDialog by remember { mutableStateOf(false) }
     var djPasskeyInput by remember { mutableStateOf("") }
+    var showRequestsSheet by remember { mutableStateOf(false) }
+    var messagePendingDelete by remember { mutableStateOf<ChatMessage?>(null) }
+
+    LaunchedEffect(isDjAuthenticated) {
+        if (isDjAuthenticated) {
+            showDjDialog = false
+            djPasskeyInput = ""
+            viewModel.loadSongRequests()
+        }
+    }
 
     val reactionEmojis = listOf("🌸", "🍙", "✨", "🎧", "💖", "🐻", "🔥", "🎌")
 
@@ -256,6 +273,22 @@ fun CommunityScreen(viewModel: RadioViewModel) {
                             Text("Activar Hype", fontSize = 11.sp)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showRequestsSheet = true },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                    ) {
+                        Text(
+                            text = if (songRequests.isEmpty()) "🎵 Pedidos" else "🎵 Pedidos (${songRequests.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
@@ -342,11 +375,27 @@ fun CommunityScreen(viewModel: RadioViewModel) {
                             }
                         }
 
-                        Text(
-                            text = msg.timestamp,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = msg.timestamp,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                            if (isDjAuthenticated && msg.serverId != null) {
+                                Spacer(modifier = Modifier.width(2.dp))
+                                IconButton(
+                                    onClick = { messagePendingDelete = msg },
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Eliminar mensaje",
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -420,75 +469,15 @@ fun CommunityScreen(viewModel: RadioViewModel) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Elige tu cuenta para participar en el chat con tu insignia oficial:",
+                        "Por ahora el chat funciona en modo invitado. El acceso con Discord, Google y X se habilitará cuando la verificación se complete en el servidor.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
 
-                    // Opción Discord (Abre flujo de autorización real en navegador)
-                    Button(
-                        onClick = {
-                            try {
-                                val url = AuthSecurityConfig.getDiscordAuthUrl()
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                                Toast.makeText(context, "Abriendo autorización en Discord...", Toast.LENGTH_SHORT).show()
-                                showAuthDialog = false
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "No se pudo abrir el navegador: ${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5865F2)),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("🤖 Conectar con Discord")
-                    }
-
-                    // Opción Google (Abre SSO oficial)
-                    Button(
-                        onClick = {
-                            try {
-                                val url = AuthSecurityConfig.getGoogleAuthUrl()
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                                Toast.makeText(context, "Abriendo autorización de Google...", Toast.LENGTH_SHORT).show()
-                                showAuthDialog = false
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "No se pudo abrir el navegador: ${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F9D58)),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("🌐 Iniciar sesión con Google")
-                    }
-
-                    // Opción X (Twitter)
-                    Button(
-                        onClick = {
-                            try {
-                                val url = AuthSecurityConfig.getXAuthUrl()
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                                Toast.makeText(context, "Abriendo autorización en X...", Toast.LENGTH_SHORT).show()
-                                showAuthDialog = false
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "No se pudo abrir el navegador: ${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF14171A)),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("𝕏 Conectar con X (Twitter)")
-                    }
-
                     // Modo Anónimo
                     OutlinedButton(
                         onClick = {
-                            viewModel.loginWithProvider(AuthProvider.GUEST)
+                            viewModel.loginAsGuest()
                             showAuthDialog = false
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -549,13 +538,7 @@ fun CommunityScreen(viewModel: RadioViewModel) {
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        val success = viewModel.authenticateDj(djPasskeyInput)
-                        if (success) {
-                            showDjDialog = false
-                            djPasskeyInput = ""
-                        }
-                    },
+                    onClick = { viewModel.authenticateDj(djPasskeyInput) },
                     colors = ButtonDefaults.buttonColors(containerColor = DjPurple)
                 ) {
                     Text("Desbloquear")
@@ -572,5 +555,208 @@ fun CommunityScreen(viewModel: RadioViewModel) {
                 }
             }
         )
+    }
+
+    // Confirmación de borrado (moderación DJ)
+    messagePendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { messagePendingDelete = null },
+            title = {
+                Text("Eliminar mensaje", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("¿Borrar el mensaje de ${target.username}? Esta acción no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteChatMessage(target)
+                        messagePendingDelete = null
+                    }
+                ) {
+                    Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { messagePendingDelete = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Panel de pedidos de canciones (solo DJ)
+    if (showRequestsSheet) {
+        LaunchedEffect(showRequestsSheet) {
+            while (isActive) {
+                viewModel.loadSongRequests()
+                delay(15_000)
+            }
+        }
+
+        SongRequestsSheet(
+            requests = songRequests,
+            live = liveStatus,
+            onUpdateStatus = { id, status -> viewModel.updateSongRequestStatus(id, status) },
+            onDismiss = { showRequestsSheet = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SongRequestsSheet(
+    requests: List<BackendSongRequestDto>,
+    live: BackendLiveStatus,
+    onUpdateStatus: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Pedidos de canciones",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (live.isLive) "● CABINA EN VIVO" else "● AUTODJ",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (live.isLive) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (requests.isEmpty()) {
+                Text(
+                    text = "No hay pedidos activos por ahora.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(requests, key = { it.id }) { request ->
+                        SongRequestRow(request = request, onUpdateStatus = onUpdateStatus)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongRequestRow(
+    request: BackendSongRequestDto,
+    onUpdateStatus: (String, String) -> Unit
+) {
+    val heading = listOf(request.artist, request.title)
+        .filter { it.isNotBlank() }
+        .joinToString(" — ")
+        .ifBlank { request.query }
+
+    val statusLabel = when (request.status) {
+        "pending" -> "Pendiente"
+        "queued" -> "En cola"
+        "played" -> "Reproducida"
+        else -> "Descartada"
+    }
+    val statusColor = when (request.status) {
+        "pending" -> Color(0xFFFFA000)
+        "queued" -> Color(0xFF2E7D32)
+        else -> Color.Gray
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = heading,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Pidió ${request.requestedBy}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(statusColor)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(text = statusLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+
+        if (request.liveAtRequest) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(text = "🎤 Pedido de cabina", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = DjPurple)
+        }
+
+        if (!request.message.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "“${request.message}”",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+        }
+
+        if (!request.failureReason.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = request.failureReason ?: "",
+                fontSize = 10.sp,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
+        if (request.status == "pending" || request.status == "queued") {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { onUpdateStatus(request.id, "queued") }) {
+                    Text("En cola", fontSize = 11.sp)
+                }
+                TextButton(onClick = { onUpdateStatus(request.id, "played") }) {
+                    Text("Reproducida", fontSize = 11.sp)
+                }
+                TextButton(onClick = { onUpdateStatus(request.id, "dismissed") }) {
+                    Text("Descartar", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
     }
 }

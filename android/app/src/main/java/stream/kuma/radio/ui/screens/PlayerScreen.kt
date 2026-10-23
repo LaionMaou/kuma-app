@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,15 +34,21 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -59,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import stream.kuma.radio.data.model.SongCatalogItem
 import stream.kuma.radio.ui.theme.LiveNeonGreen
 import stream.kuma.radio.ui.viewmodel.RadioViewModel
 
@@ -74,6 +84,14 @@ fun PlayerScreen(
     val currentTrack by viewModel.currentTrack.collectAsState()
     val currentDj by viewModel.currentDj.collectAsState()
     val isMuted by viewModel.isMuted.collectAsState()
+    val songCatalog by viewModel.songCatalog.collectAsState()
+    val isSearchingSongs by viewModel.isSearchingSongs.collectAsState()
+    val isSubmittingSongRequest by viewModel.isSubmittingSongRequest.collectAsState()
+
+    var showRequestDialog by remember { mutableStateOf(false) }
+    var requestQuery by remember { mutableStateOf("") }
+    var selectedSong by remember { mutableStateOf<SongCatalogItem?>(null) }
+    var requestMessage by remember { mutableStateOf("") }
 
     // Vinyl Album Art Rotation Animation
     val infiniteTransition = rememberInfiniteTransition(label = "vinyl_spin")
@@ -331,7 +349,29 @@ fun PlayerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = {
+                requestQuery = ""
+                selectedSong = null
+                requestMessage = ""
+                viewModel.clearSongCatalog()
+                showRequestDialog = true
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Pedir una canción", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         // 5. Main Control Bar: Mute (Headphones/Muted), Play/Pause FAB, Cast
         Row(
@@ -395,5 +435,143 @@ fun PlayerScreen(
                 )
             }
         }
+    }
+
+    if (showRequestDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showRequestDialog = false
+                viewModel.clearSongCatalog()
+            },
+            title = {
+                Text("Pedir una canción", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (currentDj.isLiveStreamer) {
+                            "Hay DJ en vivo: tu pedido llega directo a la cabina."
+                        } else {
+                            "Se intentará poner en cola en la radio automáticamente."
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+
+                    OutlinedTextField(
+                        value = requestQuery,
+                        onValueChange = {
+                            requestQuery = it
+                            selectedSong = null
+                            viewModel.searchRequestableSongs(it)
+                        },
+                        label = { Text("Canción o artista") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    TextButton(
+                        onClick = {
+                            val query = "${currentTrack.title} ${currentTrack.artist}".trim()
+                            requestQuery = query
+                            selectedSong = null
+                            viewModel.searchRequestableSongs(query)
+                        },
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text("Usar la que está sonando", fontSize = 11.sp)
+                    }
+
+                    when {
+                        isSearchingSongs -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                        songCatalog.isNotEmpty() -> {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 190.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(songCatalog, key = { it.requestId }) { song ->
+                                    val selected = selectedSong?.requestId == song.requestId
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(
+                                                if (selected) {
+                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                                }
+                                            )
+                                            .clickable { selectedSong = song }
+                                            .padding(8.dp)
+                                    ) {
+                                        Text(
+                                            text = song.title,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = song.artist,
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        requestQuery.trim().length >= 2 -> {
+                            Text(
+                                text = "Sin coincidencias en el catálogo. Igual podés pedirla y el DJ la revisa.",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = requestMessage,
+                        onValueChange = { requestMessage = it },
+                        label = { Text("Mensaje para el DJ (opcional)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.submitSongRequest(requestQuery, selectedSong, requestMessage)
+                        showRequestDialog = false
+                        viewModel.clearSongCatalog()
+                    },
+                    enabled = requestQuery.isNotBlank() && !isSubmittingSongRequest
+                ) {
+                    Text(if (isSubmittingSongRequest) "Enviando..." else "Pedir")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRequestDialog = false
+                        viewModel.clearSongCatalog()
+                    }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
